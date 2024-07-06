@@ -191,20 +191,20 @@ static void * unflatten_dt_node(const void *blob,
 	int has_name = 0;
 	int new_format = 0;
 
-	pathp = fdt_get_name(blob, *poffset, &l);
+	pathp = fdt_get_name(blob, *poffset, &l);									// 	fdt에서 path 가져오는 함수
 	if (!pathp)
 		return mem;
 
-	allocl = ++l;
+	allocl = ++l;																// 실제로 할당할 사이즈
 
 	/* version 0x10 has a more compact unit name here instead of the full
 	 * path. we accumulate the full path size using "fpsize", we'll rebuild
 	 * it later. We detect this because the first character of the name is
 	 * not '/'.
 	 */
-	if ((*pathp) != '/') {
-		new_format = 1;
-		if (fpsize == 0) {
+	if ((*pathp) != '/') {														// compact path인 경우 
+		new_format = 1;															// compact path flag
+		if (fpsize == 0) {														// recursive call 이므로 처음 함수가 실행되었을 때 해당 조건문에 들어감
 			/* root node: special case. fpsize accounts for path
 			 * plus terminating zero. root node only has '/', so
 			 * fpsize should be 2, but we want to avoid the first
@@ -213,8 +213,8 @@ static void * unflatten_dt_node(const void *blob,
 			fpsize = 1;
 			allocl = 2;
 			l = 1;
-			pathp = "";
-		} else {
+			pathp = "";	
+		} else {																// 첫 번째 호출 이외인 경우
 			/* account for '/' and path size minus terminal 0
 			 * already in 'l'
 			 */
@@ -223,15 +223,15 @@ static void * unflatten_dt_node(const void *blob,
 		}
 	}
 
-	np = unflatten_dt_alloc(&mem, sizeof(struct device_node) + allocl,
+	np = unflatten_dt_alloc(&mem, sizeof(struct device_node) + allocl,			// struct device_node + 신규 추가 node의 할당할 사이즈 반환
 				__alignof__(struct device_node));
-	if (!dryrun) {
+	if (!dryrun) {																// 가짜 동작, 할당 없이 크기만 알아 올 목적
 		char *fn;
 		of_node_init(np);
-		np->full_name = fn = ((char *)np) + sizeof(*np);
-		if (new_format) {
+		np->full_name = fn = ((char *)np) + sizeof(*np);						// unflatten_dt_alloc 에서 가져온 주소에 np->full_name 문자열을 저장
+		if (new_format) {														// compact path -> full path
 			/* rebuild full path for new format */
-			if (dad && dad->parent) {
+			if (dad && dad->parent) {	 
 				strcpy(fn, dad->full_name);
 #ifdef DEBUG
 				if ((strlen(fn) + l + 1) != allocl) {
@@ -239,28 +239,28 @@ static void * unflatten_dt_node(const void *blob,
 						pathp, (int)strlen(fn),
 						l, allocl);
 				}
-#endif
-				fn += strlen(fn);
+#endif						
+				fn += strlen(fn);												// full path 시, 사이즈 값 업데이트
 			}
 			*(fn++) = '/';
 		}
-		memcpy(fn, pathp, l);
+		memcpy(fn, pathp, l);													// 상위 노드 이름 뒤에 현재 이름 노드를 입력 ex) "/cpus" + "/cpu@0"
 
-		prev_pp = &np->properties;
-		if (dad != NULL) {
+		prev_pp = &np->properties;												// 현재 노드를 이전 노드로 이전
+		if (dad != NULL) {														// 루트 노드가 아닌 경우 binary로 설정되었던 노드를 linked list로 변환
 			np->parent = dad;
 			np->sibling = dad->child;
 			dad->child = np;
 		}
 	}
 	/* process properties */
-	for (offset = fdt_first_property_offset(blob, *poffset);
+	for (offset = fdt_first_property_offset(blob, *poffset);					// 첫 번째 blob의 offset을 리턴
 	     (offset >= 0);
-	     (offset = fdt_next_property_offset(blob, offset))) {
+	     (offset = fdt_next_property_offset(blob, offset))) {					// 다음 노드의 offset을 리턴
 		const char *pname;
 		u32 sz;
 
-		if (!(p = fdt_getprop_by_offset(blob, offset, &pname, &sz))) {
+		if (!(p = fdt_getprop_by_offset(blob, offset, &pname, &sz))) {			// property 이름, 사이즈, 값을 가져옴
 			offset = -FDT_ERR_INTERNAL;
 			break;
 		}
@@ -271,7 +271,7 @@ static void * unflatten_dt_node(const void *blob,
 		}
 		if (strcmp(pname, "name") == 0)
 			has_name = 1;
-		pp = unflatten_dt_alloc(&mem, sizeof(struct property),
+		pp = unflatten_dt_alloc(&mem, sizeof(struct property),					// struct device_node + 신규 추가 node의 할당할 사이즈 반환
 					__alignof__(struct property));
 		if (!dryrun) {
 			/* We accept flattened tree phandles either in
@@ -289,17 +289,17 @@ static void * unflatten_dt_node(const void *blob,
 			 * stuff */
 			if (strcmp(pname, "ibm,phandle") == 0)
 				np->phandle = be32_to_cpup(p);
-			pp->name = (char *)pname;
+			pp->name = (char *)pname;											// 리턴받은 property에 값 입력
 			pp->length = sz;
 			pp->value = (__be32 *)p;
-			*prev_pp = pp;
-			prev_pp = &pp->next;
+			*prev_pp = pp;														// property를 linked list에 입력
+			prev_pp = &pp->next;												// 다음 루프에서 사용할 prev_pp 입력
 		}
 	}
 	/* with version 0x10 we may not have the name property, recreate
 	 * it here from the unit name if absent
 	 */
-	if (!has_name) {
+	if (!has_name) {															// has_name이 없을 경우 해당 조건문에서 만듦
 		const char *p1 = pathp, *ps = pathp, *pa = NULL;
 		int sz;
 
@@ -312,22 +312,22 @@ static void * unflatten_dt_node(const void *blob,
 		}
 		if (pa < ps)
 			pa = p1;
-		sz = (pa - ps) + 1;
-		pp = unflatten_dt_alloc(&mem, sizeof(struct property) + sz,
+		sz = (pa - ps) + 1;														// property 이름 사이즈 계산 (ps == start, pa == end)
+		pp = unflatten_dt_alloc(&mem, sizeof(struct property) + sz,				// struct device_node + 신규 추가 node의 할당할 사이즈 반환
 					__alignof__(struct property));
-		if (!dryrun) {
-			pp->name = "name";
+		if (!dryrun) {															// property linked list 에 입력
+			pp->name = "name";													// has_name이 아닐 경우, name property 가 없는 것이므로 추가로 생성
 			pp->length = sz;
 			pp->value = pp + 1;
 			*prev_pp = pp;
 			prev_pp = &pp->next;
-			memcpy(pp->value, ps, sz - 1);
-			((char *)pp->value)[sz - 1] = 0;
+			memcpy(pp->value, ps, sz - 1);										// value에 property name 입력
+			((char *)pp->value)[sz - 1] = 0;									// 마지막 문자를 '/0'으로 초기화
 			pr_debug("fixed up name for %s -> %s\n", pathp,
 				(char *)pp->value);
 		}
 	}
-	if (!dryrun) {
+	if (!dryrun) {																// 마지막 값 이므로 NULL 입력 (쓰레기 값이 들어있음)												
 		*prev_pp = NULL;
 		np->name = of_get_property(np, "name", NULL);
 		np->type = of_get_property(np, "device_type", NULL);
@@ -338,12 +338,12 @@ static void * unflatten_dt_node(const void *blob,
 			np->type = "<NULL>";
 	}
 
-	old_depth = depth;
-	*poffset = fdt_next_node(blob, *poffset, &depth);
+	old_depth = depth;															// 재귀 호출 전에 depth 업데이트
+	*poffset = fdt_next_node(blob, *poffset, &depth);							// poffset 업데이트
 	if (depth < 0)
 		depth = 0;
 	while (*poffset > 0 && depth > old_depth)
-		mem = unflatten_dt_node(blob, mem, poffset, np, NULL,
+		mem = unflatten_dt_node(blob, mem, poffset, np, NULL,					// 재귀 호출로 하위 노드 탐색
 					fpsize, dryrun);
 
 	if (*poffset < 0 && *poffset != -FDT_ERR_NOTFOUND)
@@ -353,7 +353,7 @@ static void * unflatten_dt_node(const void *blob,
 	 * Reverse the child list. Some drivers assumes node order matches .dts
 	 * node order
 	 */
-	if (!dryrun && np->child) {
+	if (!dryrun && np->child) {													// linked list의 순서를 반대로 변경
 		struct device_node *child = np->child;
 		np->child = NULL;
 		while (child) {
@@ -367,7 +367,7 @@ static void * unflatten_dt_node(const void *blob,
 	if (nodepp)
 		*nodepp = np;
 
-	return mem;
+	return mem;																	// mem 리턴
 }
 
 /**
@@ -402,14 +402,14 @@ static void __unflatten_device_tree(const void *blob,
 	pr_debug("size: %08x\n", fdt_totalsize(blob));
 	pr_debug("version: %08x\n", fdt_version(blob));
 
-	if (fdt_check_header(blob)) {
+	if (fdt_check_header(blob)) {														// blog header 값이 지정된 값과 일치하는지 확인
 		pr_err("Invalid device tree blob header\n");
 		return;
 	}
 
 	/* First pass, scan for size */
 	start = 0;
-	size = (unsigned long)unflatten_dt_node(blob, NULL, &start, NULL, NULL, 0, true);
+	size = (unsigned long)unflatten_dt_node(blob, NULL, &start, NULL, NULL, 0, true);	// tree 예상 사이즈를 리턴
 	size = ALIGN(size, 4);
 
 	pr_debug("  size is %lx, allocating...\n", size);
@@ -418,14 +418,14 @@ static void __unflatten_device_tree(const void *blob,
 	mem = dt_alloc(size + 4, __alignof__(struct device_node));
 	memset(mem, 0, size);
 
-	*(__be32 *)(mem + size) = cpu_to_be32(0xdeadbeef);
+	*(__be32 *)(mem + size) = cpu_to_be32(0xdeadbeef);									// 트리 값이 넘어가는지 확인하기 위해 deadbeef 값을 써둠
 
 	pr_debug("  unflattening %p...\n", mem);
 
 	/* Second pass, do actual unflattening */
 	start = 0;
-	unflatten_dt_node(blob, mem, &start, NULL, mynodes, 0, false);
-	if (be32_to_cpup(mem + size) != 0xdeadbeef)
+	unflatten_dt_node(blob, mem, &start, NULL, mynodes, 0, false);						// 실제 할당
+	if (be32_to_cpup(mem + size) != 0xdeadbeef)											// 해당 메모리 값이 위에서 써둔 deadbeef 값인지 확인, 아닐 경우 경계 값을 넘어가는 것임
 		pr_warning("End of tree marker overwritten: %08x\n",
 			   be32_to_cpup(mem + size));
 
@@ -462,6 +462,7 @@ int __initdata dt_root_size_cells;
 
 void *initial_boot_params;
 
+#define CONFIG_OF_EARLY_FLATTREE
 #ifdef CONFIG_OF_EARLY_FLATTREE
 
 static u32 of_fdt_crc32;
@@ -902,24 +903,24 @@ u64 __init dt_mem_next_cell(int s, const __be32 **cellp)
 int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 				     int depth, void *data)
 {
-	const char *type = of_get_flat_dt_prop(node, "device_type", NULL);
+	const char *type = of_get_flat_dt_prop(node, "device_type", NULL);					// FDT에서 device_type 을 찾아 포인터를 리턴
 	const __be32 *reg, *endp;
 	int l;
 
 	/* We are scanning "memory" nodes only */
-	if (type == NULL) {
+	if (type == NULL) {																	// power-pc의 경우 memory@0 노드인 경우가 있음
 		/*
 		 * The longtrail doesn't have a device_type on the
 		 * /memory node, so look for the node called /memory@0.
 		 */
-		if (!IS_ENABLED(CONFIG_PPC32) || depth != 1 || strcmp(uname, "memory@0") != 0)
+		if (!IS_ENABLED(CONFIG_PPC32) || depth != 1 || strcmp(uname, "memory@0") != 0)	
 			return 0;
 	} else if (strcmp(type, "memory") != 0)
 		return 0;
 
-	reg = of_get_flat_dt_prop(node, "linux,usable-memory", &l);
+	reg = of_get_flat_dt_prop(node, "linux,usable-memory", &l);							// FDT linux,usable-memory 포인터를 리턴
 	if (reg == NULL)
-		reg = of_get_flat_dt_prop(node, "reg", &l);
+		reg = of_get_flat_dt_prop(node, "reg", &l);										// 없을 경우 reg 포인터를 리턴
 	if (reg == NULL)
 		return 0;
 
@@ -927,11 +928,11 @@ int __init early_init_dt_scan_memory(unsigned long node, const char *uname,
 
 	pr_debug("memory scan node %s, reg size %d,\n", uname, l);
 
-	while ((endp - reg) >= (dt_root_addr_cells + dt_root_size_cells)) {
-		u64 base, size;
+	while ((endp - reg) >= (dt_root_addr_cells + dt_root_size_cells)) {					// memory reg가 2개 이상인 경우를 위해 while looping
+		u64 base, size;																	// reg = <>, 단위로 나뉘어 있는 데이터를 처리
 
-		base = dt_mem_next_cell(dt_root_addr_cells, &reg);
-		size = dt_mem_next_cell(dt_root_size_cells, &reg);
+		base = dt_mem_next_cell(dt_root_addr_cells, &reg);								// reg에서 선언된 address-cell
+		size = dt_mem_next_cell(dt_root_size_cells, &reg);								// reg에서 선언된 size-cell
 
 		if (size == 0)
 			continue;
@@ -981,6 +982,7 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 	return 1;
 }
 
+#define CONFIG_HAVE_MEMBLOCK
 #ifdef CONFIG_HAVE_MEMBLOCK
 #ifndef MIN_MEMBLOCK_ADDR
 #define MIN_MEMBLOCK_ADDR	__pa(PAGE_OFFSET)
@@ -991,43 +993,43 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 
 void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
 {
-	const u64 phys_offset = MIN_MEMBLOCK_ADDR;
+	const u64 phys_offset = MIN_MEMBLOCK_ADDR;						// physical memory offset (0)
 
-	if (!PAGE_ALIGNED(base)) {
+	if (!PAGE_ALIGNED(base)) {										// Algin 상태 확인
 		if (size < PAGE_SIZE - (base & ~PAGE_MASK)) {
 			pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
 				base, base + size);
 			return;
 		}
 		size -= PAGE_SIZE - (base & ~PAGE_MASK);
-		base = PAGE_ALIGN(base);
+		base = PAGE_ALIGN(base);									// 페이지 사이즈에 맞춰서 Align
 	}
-	size &= PAGE_MASK;
+	size &= PAGE_MASK;												// 페이지 단위로 메모리를 추가하기 위한 작업
 
-	if (base > MAX_MEMBLOCK_ADDR) {
+	if (base > MAX_MEMBLOCK_ADDR) {									// address 가 max address 보다 큰지 확인
 		pr_warning("Ignoring memory block 0x%llx - 0x%llx\n",
 				base, base + size);
 		return;
 	}
 
-	if (base + size - 1 > MAX_MEMBLOCK_ADDR) {
+	if (base + size - 1 > MAX_MEMBLOCK_ADDR) {						// address의 마지막 지점이 max address 보다 큰지 확인
 		pr_warning("Ignoring memory range 0x%llx - 0x%llx\n",
 				((u64)MAX_MEMBLOCK_ADDR) + 1, base + size);
 		size = MAX_MEMBLOCK_ADDR - base + 1;
 	}
 
-	if (base + size < phys_offset) {
+	if (base + size < phys_offset) {								// address의 마지막 지점이 min address 보다 작은지 확인
 		pr_warning("Ignoring memory block 0x%llx - 0x%llx\n",
 			   base, base + size);
 		return;
 	}
-	if (base < phys_offset) {
+	if (base < phys_offset) {										// address의 시작 지점이 min address 보다 작은지 확인
 		pr_warning("Ignoring memory range 0x%llx - 0x%llx\n",
 			   base, phys_offset);
-		size -= phys_offset - base;
-		base = phys_offset;
+		size -= phys_offset - base;									// phys_offset 보다 작은 만큼 사이즈를 줄임
+		base = phys_offset;											// 메모리 시작 address를 phys_offset에 고정
 	}
-	memblock_add(base, size);
+	memblock_add(base, size);										// Todo.
 }
 
 int __init __weak early_init_dt_reserve_memory_arch(phys_addr_t base,
