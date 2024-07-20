@@ -76,7 +76,7 @@ static phys_addr_t __init early_pgtable_alloc(void)
 	phys_addr_t phys;
 	void *ptr;
 
-	phys = memblock_alloc(PAGE_SIZE, PAGE_SIZE);
+	phys = memblock_alloc(PAGE_SIZE, PAGE_SIZE); // 메모리 블록의 물리 주소를 할당 받는다.
 	BUG_ON(!phys);
 
 	/*
@@ -84,17 +84,18 @@ static phys_addr_t __init early_pgtable_alloc(void)
 	 * slot will be free, so we can (ab)use the FIX_PTE slot to initialise
 	 * any level of table.
 	 */
-	ptr = pte_set_fixmap(phys);
+	// *** phys 를 0으로 초기화해야 하지만, 물리 주소이므로 가상 주소로 변환해야 할 필요가 있음
+	ptr = pte_set_fixmap(phys); // memblock_alloc으로 할당받은 물리 주소를 fixmap 가상 주소에 매핑, 가상 주소를 리턴 받음
 
-	memset(ptr, 0, PAGE_SIZE);
+	memset(ptr, 0, PAGE_SIZE); // phys 주소를 0으로 초기화 함
 
 	/*
 	 * Implicit barriers also ensure the zeroed page is visible to the page
 	 * table walker
 	 */
-	pte_clear_fixmap();
+	pte_clear_fixmap(); // pte가 가리키고 있는 주소를 초기화
 
-	return phys;
+	return phys; // memblock_alloc 에서 할당받았던 물리 메모리 주소를 리턴
 }
 
 /*
@@ -312,19 +313,19 @@ static void init_pgd(pgd_t *pgd, phys_addr_t phys, unsigned long virt,
 	 * If the virtual and physical address don't have the same offset
 	 * within a page, we cannot map the region as the caller expects.
 	 */
-	if (WARN_ON((phys ^ virt) & ~PAGE_MASK))
+	if (WARN_ON((phys ^ virt) & ~PAGE_MASK)) // 물리 메모리와 가상 메모리 오프셋이 동일하지 않은 경우 에러 처리
 		return;
 
-	phys &= PAGE_MASK;
-	addr = virt & PAGE_MASK;
-	length = PAGE_ALIGN(size + (virt & ~PAGE_MASK));
+	phys &= PAGE_MASK; // 물리 메모리에서 page offset 부분을 마스킹
+	addr = virt & PAGE_MASK; // 가상 메모리에서 pag offset 부분을 마스킹
+	length = PAGE_ALIGN(size + (virt & ~PAGE_MASK)); // 다음 페이지 시작주소까지 올림하여 할당 크기계산
 
-	end = addr + length;
+	end = addr + length; // 마지막 지점 계산
 	do {
-		next = pgd_addr_end(addr, end);
-		alloc_init_pud(pgd, addr, next, phys, prot, pgtable_alloc);
-		phys += next - addr;
-	} while (pgd++, addr = next, addr != end);
+		next = pgd_addr_end(addr, end); // 다음 pgd 주소를 가져온다.
+		alloc_init_pud(pgd, addr, next, phys, prot, pgtable_alloc); // 하위 PUD 테이블 할당부로 추정 (***TODO 분석 필요)
+		phys += next - addr; // phys 에 size 만큼 더한다.
+	} while (pgd++, addr = next, addr != end); // pgd 전체 순회
 }
 
 static phys_addr_t late_pgtable_alloc(void)
@@ -432,16 +433,16 @@ static void __init map_mem(pgd_t *pgd)
 	struct memblock_region *reg;
 
 	/* map all the memory banks */
-	for_each_memblock(memory, reg) {
-		phys_addr_t start = reg->base;
-		phys_addr_t end = start + reg->size;
+	for_each_memblock(memory, reg) { // memory region 을 순서대로 가져온다.
+		phys_addr_t start = reg->base; // region 시작 주소
+		phys_addr_t end = start + reg->size; // region 사이즈
 
 		if (start >= end)
 			break;
-		if (memblock_is_nomap(reg))
+		if (memblock_is_nomap(reg)) // no mapping 인 경우 mapping 하지 않음
 			continue;
 
-		__map_memblock(pgd, start, end);
+		__map_memblock(pgd, start, end); // fdt 에서 읽어온 memory region 을 pgd 에 매핑, 커널 이미지와 겹치는 부분은 읽기 전용으로 매핑
 	}
 }
 
@@ -474,22 +475,23 @@ void fixup_init(void)
 static void __init map_kernel_chunk(pgd_t *pgd, void *va_start, void *va_end,
 				    pgprot_t prot, struct vm_struct *vma)
 {
-	phys_addr_t pa_start = __pa(va_start);
-	unsigned long size = va_end - va_start;
+	phys_addr_t pa_start = __pa(va_start); // 영역 시작 주소
+	unsigned long size = va_end - va_start; // 영역 사이즈
 
-	BUG_ON(!PAGE_ALIGNED(pa_start));
+	BUG_ON(!PAGE_ALIGNED(pa_start)); // 페이지 사이즈 정렬 여부 확인
 	BUG_ON(!PAGE_ALIGNED(size));
 
 	__create_pgd_mapping(pgd, pa_start, (unsigned long)va_start, size, prot,
-			     early_pgtable_alloc);
+			     early_pgtable_alloc); // 요청 가상 주소 범위를 가상 주소에 해당하는 물리 주소에 prot 메모리 타입으로 매핑 (***TODO 3-7 Code 분석)
 
+	// vm_struct 값 입력
 	vma->addr	= va_start;
 	vma->phys_addr	= pa_start;
 	vma->size	= size;
 	vma->flags	= VM_MAP;
 	vma->caller	= __builtin_return_address(0);
 
-	vm_area_add_early(vma);
+	vm_area_add_early(vma); // vm list에 추가한다.
 }
 
 /*
@@ -499,36 +501,36 @@ static void __init map_kernel(pgd_t *pgd)
 {
 	static struct vm_struct vmlinux_text, vmlinux_rodata, vmlinux_init, vmlinux_data;
 
-	map_kernel_chunk(pgd, _stext, __start_rodata, PAGE_KERNEL_EXEC, &vmlinux_text);
-	map_kernel_chunk(pgd, __start_rodata, _etext, PAGE_KERNEL, &vmlinux_rodata);
-	map_kernel_chunk(pgd, __init_begin, __init_end, PAGE_KERNEL_EXEC,
+	map_kernel_chunk(pgd, _stext, __start_rodata, PAGE_KERNEL_EXEC, &vmlinux_text); // 커널 이미지의 일반 코드 영역을 커널 실행 페이지 타입으로 매핑 
+	map_kernel_chunk(pgd, __start_rodata, _etext, PAGE_KERNEL, &vmlinux_rodata); // 읽기 전용 데이터 영역을 커널 페이지 타입으로 매핑
+	map_kernel_chunk(pgd, __init_begin, __init_end, PAGE_KERNEL_EXEC, // 초기화 코드 및 초기화 데이터 영역을 커널 실행 페이지 타입으로 매핑
 			 &vmlinux_init);
-	map_kernel_chunk(pgd, _data, _end, PAGE_KERNEL, &vmlinux_data);
+	map_kernel_chunk(pgd, _data, _end, PAGE_KERNEL, &vmlinux_data); // 일반 데이터 영역을 커널 페이지 타입으로 매핑
 
-	if (!pgd_val(*pgd_offset_raw(pgd, FIXADDR_START))) {
+	if (!pgd_val(*pgd_offset_raw(pgd, FIXADDR_START))) { // pgd에 값이 들어있지 않는 경우
 		/*
 		 * The fixmap falls in a separate pgd to the kernel, and doesn't
 		 * live in the carveout for the swapper_pg_dir. We can simply
 		 * re-use the existing dir for the fixmap.
 		 */
-		set_pgd(pgd_offset_raw(pgd, FIXADDR_START),
+		set_pgd(pgd_offset_raw(pgd, FIXADDR_START), // pgd 값을 입력
 			*pgd_offset_k(FIXADDR_START));
-	} else if (CONFIG_PGTABLE_LEVELS > 3) {
+	} else if (CONFIG_PGTABLE_LEVELS > 3) { // LEVEL 4 이상인 경우
 		/*
 		 * The fixmap shares its top level pgd entry with the kernel
 		 * mapping. This can really only occur when we are running
 		 * with 16k/4 levels, so we can simply reuse the pud level
 		 * entry instead.
 		 */
-		BUG_ON(!IS_ENABLED(CONFIG_ARM64_16K_PAGES));
-		set_pud(pud_set_fixmap_offset(pgd, FIXADDR_START),
+		BUG_ON(!IS_ENABLED(CONFIG_ARM64_16K_PAGES)); // 16K Paging이 아닌 경우 에러
+		set_pud(pud_set_fixmap_offset(pgd, FIXADDR_START), // pud 값을 입력
 			__pud(__pa(bm_pmd) | PUD_TYPE_TABLE));
-		pud_clear_fixmap();
+		pud_clear_fixmap(); // PUD의 fixmap 초기화
 	} else {
 		BUG();
 	}
 
-	kasan_copy_shadow(pgd);
+	kasan_copy_shadow(pgd); // init_pg_dir에 매핑되어 있는 kasan shadow region 영역을 swapper_pg_dir로 복사 매핑한다 **사용하지 않음
 }
 
 /*
