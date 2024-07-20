@@ -123,26 +123,26 @@ static void alloc_init_pte(pmd_t *pmd, unsigned long addr,
 {
 	pte_t *pte;
 
-	if (pmd_none(*pmd) || pmd_sect(*pmd)) {
+	if (pmd_none(*pmd) || pmd_sect(*pmd)) { // pmd entry가 null인 경우 or 2MB section 할당받는 경우
 		phys_addr_t pte_phys;
 		BUG_ON(!pgtable_alloc);
-		pte_phys = pgtable_alloc();
-		pte = pte_set_fixmap(pte_phys);
+		pte_phys = pgtable_alloc(); // 함수 포인터로 받아온 early_pgtable_alloc 함수 실행, pte를 생성
+		pte = pte_set_fixmap(pte_phys); // pte 가상 주소에 매핑
 		if (pmd_sect(*pmd))
-			split_pmd(pmd, pte);
-		__pmd_populate(pmd, pte_phys, PMD_TYPE_TABLE);
+			split_pmd(pmd, pte);  // pmd 섹션 페이지를 pte 테이블 형태로 분리 512개
+		__pmd_populate(pmd, pte_phys, PMD_TYPE_TABLE);  // pmd = pte
 		flush_tlb_all();
-		pte_clear_fixmap();
+		pte_clear_fixmap(); // pte fixmap 초기화
 	}
 	BUG_ON(pmd_bad(*pmd));
 
-	pte = pte_set_fixmap_offset(pmd, addr);
+	pte = pte_set_fixmap_offset(pmd, addr); // pmd가상 주소에 매핑
 	do {
-		set_pte(pte, pfn_pte(pfn, prot));
+		set_pte(pte, pfn_pte(pfn, prot));  // pte = pfn = prot, 물리 주소를 pte에 할당 
 		pfn++;
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 
-	pte_clear_fixmap();
+	pte_clear_fixmap(); // pte fixmap 초기화
 }
 
 static void split_pud(pud_t *old_pud, pmd_t *pmd)
@@ -187,37 +187,37 @@ static void alloc_init_pmd(pud_t *pud, unsigned long addr, unsigned long end,
 	/*
 	 * Check for initial section mappings in the pgd/pud and remove them.
 	 */
-	if (pud_none(*pud) || pud_sect(*pud)) {
+	if (pud_none(*pud) || pud_sect(*pud)) { // pud entry가 null인 경우 or 1GB section 할당받는 경우
 		phys_addr_t pmd_phys;
 		BUG_ON(!pgtable_alloc);
-		pmd_phys = pgtable_alloc();
-		pmd = pmd_set_fixmap(pmd_phys);
+		pmd_phys = pgtable_alloc(); // 함수 포인터로 받아온 early_pgtable_alloc 함수 실행, pmd를 생성
+		pmd = pmd_set_fixmap(pmd_phys); // pmd 가상 주소에 매핑
 		if (pud_sect(*pud)) {
 			/*
 			 * need to have the 1G of mappings continue to be
 			 * present
 			 */
-			split_pud(pud, pmd);
+			split_pud(pud, pmd); // pud 섹션 페이지를 pmd 테이블 형태로 분리 512개
 		}
-		__pud_populate(pud, pmd_phys, PUD_TYPE_TABLE);
+		__pud_populate(pud, pmd_phys, PUD_TYPE_TABLE); // pud = pmd
 		flush_tlb_all();
-		pmd_clear_fixmap();
+		pmd_clear_fixmap(); // pmd fixmap 초기화
 	}
 	BUG_ON(pud_bad(*pud));
 
-	pmd = pmd_set_fixmap_offset(pud, addr);
+	pmd = pmd_set_fixmap_offset(pud, addr);  // pud 가상 주소에 매핑
 	do {
-		next = pmd_addr_end(addr, end);
+		next = pmd_addr_end(addr, end);  // 다음 pmd 엔드리 가상 주소를 리턴 (next = end)
 		/* try section mapping first */
-		if (((addr | next | phys) & ~SECTION_MASK) == 0 &&
+		if (((addr | next | phys) & ~SECTION_MASK) == 0 && // Use 2MB Block 인 경우
 		      block_mappings_allowed(pgtable_alloc)) {
 			pmd_t old_pmd =*pmd;
-			pmd_set_huge(pmd, phys, prot);
+			pmd_set_huge(pmd, phys, prot);  // TLB 캐시 미스 횟수를 줄이기 위해 pmd 사이즈를 2MB 엔트리 1개로 생성 (최적화 옵션) http://www.iamroot.org/xe/index.php?mid=Programming&document_srl=208966
 			/*
 			 * Check for previous table entries created during
 			 * boot (__create_page_tables) and flush them.
 			 */
-			if (!pmd_none(old_pmd)) {
+			if (!pmd_none(old_pmd)) { // pmd에 이미 할당된 테이블이 있을 경우 할당 해제
 				flush_tlb_all();
 				if (pmd_table(old_pmd)) {
 					phys_addr_t table = pmd_page_paddr(old_pmd);
@@ -226,13 +226,13 @@ static void alloc_init_pmd(pud_t *pud, unsigned long addr, unsigned long end,
 				}
 			}
 		} else {
-			alloc_init_pte(pmd, addr, next, __phys_to_pfn(phys),
+			alloc_init_pte(pmd, addr, next, __phys_to_pfn(phys), // TODO 3-10
 				       prot, pgtable_alloc);
 		}
 		phys += next - addr;
 	} while (pmd++, addr = next, addr != end);
 
-	pmd_clear_fixmap();
+	pmd_clear_fixmap(); // pmd용 fixmap pager unmapping
 }
 
 static inline bool use_1G_block(unsigned long addr, unsigned long next,
@@ -254,25 +254,25 @@ static void alloc_init_pud(pgd_t *pgd, unsigned long addr, unsigned long end,
 	pud_t *pud;
 	unsigned long next;
 
-	if (pgd_none(*pgd)) {
+	if (pgd_none(*pgd)) { // pud가 존재하지 않는 경우 pud 생성
 		phys_addr_t pud_phys;
 		BUG_ON(!pgtable_alloc);
-		pud_phys = pgtable_alloc();
-		__pgd_populate(pgd, pud_phys, PUD_TYPE_TABLE);
+		pud_phys = pgtable_alloc(); // 함수 포인터로 받아온 early_pgtable_alloc 함수 실행, pud를 생성
+		__pgd_populate(pgd, pud_phys, PUD_TYPE_TABLE); // pgd에 새로 할당한 pud 입력 (*pgd = pud_phys)
 	}
 	BUG_ON(pgd_bad(*pgd));
 
-	pud = pud_set_fixmap_offset(pgd, addr);
+	pud = pud_set_fixmap_offset(pgd, addr); // pgd 가상 주소에 매핑
 	do {
-		next = pud_addr_end(addr, end);
+		next = pud_addr_end(addr, end); // 다음 pud 엔드리 가상 주소를 리턴 (next = end)
 
 		/*
 		 * For 4K granule only, attempt to put down a 1GB block
 		 */
-		if (use_1G_block(addr, next, phys) &&
+		if (use_1G_block(addr, next, phys) && // 4KB, pud를 사용해야 하는 경우
 		    block_mappings_allowed(pgtable_alloc)) {
 			pud_t old_pud = *pud;
-			pud_set_huge(pud, phys, prot);
+			pud_set_huge(pud, phys, prot); // TLB 캐시 미스 횟수를 줄이기 위해 pud를 1GB 엔트리 1개로 생성 (최적화 옵션) http://www.iamroot.org/xe/index.php?mid=Programming&document_srl=208966
 
 			/*
 			 * If we have an old value for a pud, it will
@@ -281,7 +281,7 @@ static void alloc_init_pud(pgd_t *pgd, unsigned long addr, unsigned long end,
 			 *
 			 * Look up the old pmd table and free it.
 			 */
-			if (!pud_none(old_pud)) {
+			if (!pud_none(old_pud)) { // pud 테이블에 입력된 값이 있을 경우 (pmd 가 있는 경우) 이를 할당 해제
 				flush_tlb_all();
 				if (pud_table(old_pud)) {
 					phys_addr_t table = pud_page_paddr(old_pud);
@@ -290,13 +290,13 @@ static void alloc_init_pud(pgd_t *pgd, unsigned long addr, unsigned long end,
 				}
 			}
 		} else {
-			alloc_init_pmd(pud, addr, next, phys, prot,
+			alloc_init_pmd(pud, addr, next, phys, prot, // ** TODO 3-9
 				       pgtable_alloc);
 		}
 		phys += next - addr;
 	} while (pud++, addr = next, addr != end);
 
-	pud_clear_fixmap();
+	pud_clear_fixmap(); // pud용 fixmap pager unmapping
 }
 
 /*
