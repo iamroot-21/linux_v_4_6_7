@@ -135,20 +135,20 @@ ENDPROC(cpu_do_resume)
  *	- pgd_phys - physical address of new TTB
  */
 ENTRY(cpu_do_switch_mm)
-	mmid	x1, x1				// get mm->context.id
-	bfi	x0, x1, #48, #16		// set the ASID
-	msr	ttbr0_el1, x0			// set TTBR0
-	isb
+	mmid	x1, x1				// get mm->context.id			// x1 = mm->context.id
+	bfi	x0, x1, #48, #16		// set the ASID					// x0.ASID = x1
+	msr	ttbr0_el1, x0			// set TTBR0					// ttbr0_el1 = x0
+	isb															// instruction sync
 alternative_if_not ARM64_WORKAROUND_CAVIUM_27456
 	ret
-	nop
+	nop															// 명령어 순서가 바뀌는 것을 방지
 	nop
 	nop
 alternative_else
-	ic	iallu
-	dsb	nsh
-	isb
-	ret
+	ic	iallu													// 명령을 실행하는 지점까지 모든 명령 캐시를 무효화
+	dsb	nsh														// data sync (non-share)
+	isb															// instruction sync
+	ret															// return
 alternative_endif
 ENDPROC(cpu_do_switch_mm)
 
@@ -160,23 +160,24 @@ ENDPROC(cpu_do_switch_mm)
  * called by anything else. It can only be executed from a TTBR0 mapping.
  */
 ENTRY(idmap_cpu_replace_ttbr1)
-	mrs	x2, daif
-	msr	daifset, #0xf
+// X0 : pgd_phys
+	mrs	x2, daif				// x2 = daif
+	msr	daifset, #0xf			// daif = 1111
 
-	adrp	x1, empty_zero_page
-	msr	ttbr1_el1, x1
-	isb
+	adrp	x1, empty_zero_page // x1 = &empty_zero_page		// empty_zero_page는 0으로 초기화된 특별한 페이지
+	msr	ttbr1_el1, x1			// ttbr1_el1 = x1				// ttbr1_el1을 0으로 초기화
+	IHBS						// 인스트럭션 파이프를 비운다.
 
-	tlbi	vmalle1
-	dsb	nsh
-	isb
+	tlbi	vmalle1				// TLB flush
+	dsb	nsh						// 공유 캐시 동기화, 물리 캐시 내용을 초기화함
+	isb							// 인스트럭션 파이프를 비운다.
 
-	msr	ttbr1_el1, x0
-	isb
+	msr	ttbr1_el1, x0			// ttbr1_el1 = pgd_phys
+	isb							// 인스트럭션 파이프를 비운다.
 
-	msr	daif, x2
+	msr	daif, x2				// daif = x2
 
-	ret
+	ret							// Return
 ENDPROC(idmap_cpu_replace_ttbr1)
 	.popsection
 

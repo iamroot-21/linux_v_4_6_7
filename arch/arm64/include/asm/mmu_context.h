@@ -49,13 +49,13 @@ static inline void contextidr_thread_switch(struct task_struct *next)
  */
 static inline void cpu_set_reserved_ttbr0(void)
 {
-	unsigned long ttbr = virt_to_phys(empty_zero_page);
+	unsigned long ttbr = virt_to_phys(empty_zero_page); 	// ttbr = &empty_zero_page
 
 	asm(
-	"	msr	ttbr0_el1, %0			// set TTBR0\n"
-	"	isb"
+	"	msr	ttbr0_el1, %0			// set TTBR0\n" 		// ttbr0_el1 = ttbr = &empty_zero_page
+	"	isb"												// instruction 대기
 	:
-	: "r" (ttbr));
+	: "r" (ttbr));											// ttbr 입력
 }
 
 /*
@@ -82,12 +82,12 @@ static inline void __cpu_set_tcr_t0sz(unsigned long t0sz)
 		return;
 
 	asm volatile (
-	"	mrs	%0, tcr_el1	;"
-	"	bfi	%0, %1, %2, %3	;"
-	"	msr	tcr_el1, %0	;"
-	"	isb"
+	"	mrs	%0, tcr_el1	;"						// %0 = tcr_el1
+	"	bfi	%0, %1, %2, %3	;"					// tcr_el1에 t0sz 값을 덮어씀
+	"	msr	tcr_el1, %0	;"						// tcr_el1 = %0
+	"	isb"									// 명령어 파이프라인을 비움
 	: "=&r" (tcr)
-	: "r"(t0sz), "I"(TCR_T0SZ_OFFSET), "I"(TCR_TxSZ_WIDTH));
+	: "r"(t0sz), "I"(TCR_T0SZ_OFFSET), "I"(TCR_TxSZ_WIDTH)); 
 }
 
 #define cpu_set_default_tcr_t0sz()	__cpu_set_tcr_t0sz(TCR_T0SZ(VA_BITS))
@@ -107,23 +107,23 @@ static inline void __cpu_set_tcr_t0sz(unsigned long t0sz)
  */
 static inline void cpu_uninstall_idmap(void)
 {
-	struct mm_struct *mm = current->active_mm;
+	struct mm_struct *mm = current->active_mm;	// mm = pgd 물리 주소
 
-	cpu_set_reserved_ttbr0();
-	local_flush_tlb_all();
-	cpu_set_default_tcr_t0sz();
+	cpu_set_reserved_ttbr0();					// TTBR0를 zero page table로 초기화
+	local_flush_tlb_all();						// data, instruction sync
+	cpu_set_default_tcr_t0sz();					// 커널 기본 t0sz를 입력
 
-	if (mm != &init_mm)
-		cpu_switch_mm(mm->pgd, mm);
+	if (mm != &init_mm)							// mm을 바꿨을 경우
+		cpu_switch_mm(mm->pgd, mm);				// mm_pgd.ASID = mm.context.id
 }
 
 static inline void cpu_install_idmap(void)
 {
-	cpu_set_reserved_ttbr0();
-	local_flush_tlb_all();
-	cpu_set_idmap_tcr_t0sz();
+	cpu_set_reserved_ttbr0();					// TTBR0를 zero page table로 초기화
+	local_flush_tlb_all();						// data, instruction sync
+	cpu_set_idmap_tcr_t0sz();					// tcr에 t0sze를 덮어 씀
 
-	cpu_switch_mm(idmap_pg_dir, &init_mm);
+	cpu_switch_mm(idmap_pg_dir, &init_mm);		// idmap_pg_dir.ASID = mm->context.id
 }
 
 /*
@@ -133,16 +133,16 @@ static inline void cpu_install_idmap(void)
 static inline void cpu_replace_ttbr1(pgd_t *pgd)
 {
 	typedef void (ttbr_replace_func)(phys_addr_t);
-	extern ttbr_replace_func idmap_cpu_replace_ttbr1;
+	extern ttbr_replace_func idmap_cpu_replace_ttbr1; // proc.S 내에 idmap_cpu_replace_ttbr1 함수
 	ttbr_replace_func *replace_phys;
 
-	phys_addr_t pgd_phys = virt_to_phys(pgd);
+	phys_addr_t pgd_phys = virt_to_phys(pgd); // 가상 메모리 주소를 물리 메모리 주소로 변경
 
 	replace_phys = (void *)virt_to_phys(idmap_cpu_replace_ttbr1);
 
-	cpu_install_idmap();
+	cpu_install_idmap(); // ttbr0_el1 레지스터 idmap 테이블로 변경
 	replace_phys(pgd_phys);
-	cpu_uninstall_idmap();
+	cpu_uninstall_idmap(); // idmap 테이블로 변경했던 ttbr0_el1 레지스터를 복구
 }
 
 /*

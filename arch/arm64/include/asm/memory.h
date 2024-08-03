@@ -86,8 +86,8 @@
  * private definitions which should NOT be used outside memory.h
  * files.  Use virt_to_phys/phys_to_virt/__pa/__va instead.
  */
-#define __virt_to_phys(x) ({						\
-	phys_addr_t __x = (phys_addr_t)(x);				\
+#define __virt_to_phys(x) ({						\ // x의 마지막 비트가 1인 경우 커널 메모리 가상 주소 변환, 0인 경우 커널 이미지에 대한 가상 주소 변환
+	phys_addr_t __x = (phys_addr_t)(x);				\ 
 	__x & BIT(VA_BITS - 1) ? (__x & ~PAGE_OFFSET) + PHYS_OFFSET :	\
 				 (__x - kimage_voffset); })
 
@@ -166,13 +166,13 @@ extern u64			kimage_voffset;
  * translation for translating DMA addresses.  Use the driver
  * DMA support - see dma-mapping.h.
  */
-#define virt_to_phys virt_to_phys
+#define virt_to_phys virt_to_phys // 커널의 가상 주소를 물리 주소로 변경
 static inline phys_addr_t virt_to_phys(const volatile void *x)
 {
 	return __virt_to_phys((unsigned long)(x));
 }
 
-#define phys_to_virt phys_to_virt
+#define phys_to_virt phys_to_virt // 물리 주소를 커널의 가상 주소로 변경
 static inline void *phys_to_virt(phys_addr_t x)
 {
 	return (void *)(__phys_to_virt(x));

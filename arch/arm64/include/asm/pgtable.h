@@ -420,7 +420,7 @@ static inline phys_addr_t pud_page_paddr(pud_t pud)
 #define pmd_offset_phys(dir, addr)	(pud_page_paddr(*(dir)) + pmd_index(addr) * sizeof(pmd_t))
 #define pmd_offset(dir, addr)		((pmd_t *)__va(pmd_offset_phys((dir), (addr))))
 
-#define pmd_set_fixmap(addr)		((pmd_t *)set_fixmap_offset(FIX_PMD, addr))
+#define pmd_set_fixmap(addr)		((pmd_t *)set_fixmap_offset(FI`X_PMD, addr))
 #define pmd_set_fixmap_offset(pud, addr)	pmd_set_fixmap(pmd_offset_phys(pud, addr))
 #define pmd_clear_fixmap()		clear_fixmap(FIX_PMD)
 
@@ -479,7 +479,7 @@ static inline phys_addr_t pgd_page_paddr(pgd_t pgd)
 #define pgd_page(pgd)		pfn_to_page(__phys_to_pfn(pgd_val(pgd) & PHYS_MASK))
 
 /* use ONLY for statically allocated translation tables */
-#define pud_offset_kimg(dir,addr)	((pud_t *)__phys_to_kimg(pud_offset_phys((dir), (addr))))
+#define pud_offset_kimg(dir,addr)	((pud_t *)__phys_to_kimg(pud_offset_phys((dir), (addr)))) // 가상 주소 addr에 대한 커널 이미지용 pud 엔트리 주소를 리턴
 
 #else
 
@@ -497,14 +497,14 @@ static inline phys_addr_t pgd_page_paddr(pgd_t pgd)
 #define pgd_ERROR(pgd)		__pgd_error(__FILE__, __LINE__, pgd_val(pgd))
 
 /* to find an entry in a page-table-directory */
-#define pgd_index(addr)		(((addr) >> PGDIR_SHIFT) & (PTRS_PER_PGD - 1))
+#define pgd_index(addr)		(((addr) >> PGDIR_SHIFT) & (PTRS_PER_PGD - 1)) // 가상 주소 addr에 대한 pgd 인덱스 값을 리턴
 
-#define pgd_offset_raw(pgd, addr)	((pgd) + pgd_index(addr))
+#define pgd_offset_raw(pgd, addr)	((pgd) + pgd_index(addr)) // 가상 주소 addr에 대한 pgd 엔트리 주소를 리턴
 
-#define pgd_offset(mm, addr)	(pgd_offset_raw((mm)->pgd, (addr)))
+#define pgd_offset(mm, addr)	(pgd_offset_raw((mm)->pgd, (addr))) // 가상 주소 addr에 대한 mm->pgd에서 pgd 엔트리 주소를 리턴
 
 /* to find an entry in a kernel page-table-directory */
-#define pgd_offset_k(addr)	pgd_offset(&init_mm, addr)
+#define pgd_offset_k(addr)	pgd_offset(&init_mm, addr) // 가상 주소 addr에 대한 커널용 pgd 엔트리 주소를 리턴
 
 #define pgd_set_fixmap(addr)	((pgd_t *)set_fixmap_offset(FIX_PGD, addr))
 #define pgd_clear_fixmap()	clear_fixmap(FIX_PGD)

@@ -656,20 +656,20 @@ void vmemmap_free(unsigned long start, unsigned long end)
 
 static inline pud_t * fixmap_pud(unsigned long addr)
 {
-	pgd_t *pgd = pgd_offset_k(addr);
+	pgd_t *pgd = pgd_offset_k(addr); // addr의 pgd 주소를 가져옴
 
 	BUG_ON(pgd_none(*pgd) || pgd_bad(*pgd));
 
-	return pud_offset_kimg(pgd, addr);
+	return pud_offset_kimg(pgd, addr); // 매크로 조건문이 달라 pud를 가져오지 않음 (pgd 바로 리턴)
 }
 
 static inline pmd_t * fixmap_pmd(unsigned long addr)
 {
-	pud_t *pud = fixmap_pud(addr);
+	pud_t *pud = fixmap_pud(addr);					// addr 의 pud 주소를 가져옴
 
 	BUG_ON(pud_none(*pud) || pud_bad(*pud));
 
-	return pmd_offset_kimg(pud, addr);
+	return pmd_offset_kimg(pud, addr);				// pmd 주소를 리턴
 }
 
 static inline pte_t * fixmap_pte(unsigned long addr)
@@ -679,28 +679,32 @@ static inline pte_t * fixmap_pte(unsigned long addr)
 
 void __init early_fixmap_init(void)
 {
+	// 4 Table mapping
+	// pgd -> bm_pud -> bm_pmd -> bm_pte
+	// 3 Table mapping
+	// pgd -> bm_pmd -> bm_pte
 	pgd_t *pgd;
 	pud_t *pud;
 	pmd_t *pmd;
 	unsigned long addr = FIXADDR_START;
 
-	pgd = pgd_offset_k(addr);
-	if (CONFIG_PGTABLE_LEVELS > 3 &&
-	    !(pgd_none(*pgd) || pgd_page_paddr(*pgd) == __pa(bm_pud))) {
+	pgd = pgd_offset_k(addr); // addr에 대한 커널용 pgd 엔트리 주소 리턴
+	if (CONFIG_PGTABLE_LEVELS > 3 &&										// pud가 필요한 경우 (PGTABLE 4 이상)
+	    !(pgd_none(*pgd) || pgd_page_paddr(*pgd) == __pa(bm_pud))) {		// Paging Size 확인 (16K Page 이상)
 		/*
 		 * We only end up here if the kernel mapping and the fixmap
 		 * share the top level pgd entry, which should only happen on
 		 * 16k/4 levels configurations.
 		 */
 		BUG_ON(!IS_ENABLED(CONFIG_ARM64_16K_PAGES));
-		pud = pud_offset_kimg(pgd, addr);
-	} else {
-		pgd_populate(&init_mm, pgd, bm_pud);
-		pud = fixmap_pud(addr);
+		pud = pud_offset_kimg(pgd, addr);									// 커널 이미지용 pud 엔트리 주소를 리턴
+	} else {																// pud가 없는 경우
+		pgd_populate(&init_mm, pgd, bm_pud);								// pgd 엔트리에 bm_pud 주소를 지정
+		pud = fixmap_pud(addr);												// pgd 주소를 리턴
 	}
-	pud_populate(&init_mm, pud, bm_pmd);
-	pmd = fixmap_pmd(addr);
-	pmd_populate_kernel(&init_mm, pmd, bm_pte);
+	pud_populate(&init_mm, pud, bm_pmd);									// pud 엔트리에 bm_pmd 주소를 지정
+	pmd = fixmap_pmd(addr);													// pmd 주소를 리턴
+	pmd_populate_kernel(&init_mm, pmd, bm_pte);								// pmd 엔트리에 bm_pte 주소를 지정
 
 	/*
 	 * The boot-ioremap range spans multiple pmds, for which
@@ -709,7 +713,7 @@ void __init early_fixmap_init(void)
 	BUILD_BUG_ON((__fix_to_virt(FIX_BTMAP_BEGIN) >> PMD_SHIFT)
 		     != (__fix_to_virt(FIX_BTMAP_END) >> PMD_SHIFT));
 
-	if ((pmd != fixmap_pmd(fix_to_virt(FIX_BTMAP_BEGIN)))
+	if ((pmd != fixmap_pmd(fix_to_virt(FIX_BTMAP_BEGIN)))					// pmd 엔트리 하나가 fixmap 영역 전체를 커버하지 못하는 경우
 	     || pmd != fixmap_pmd(fix_to_virt(FIX_BTMAP_END))) {
 		WARN_ON(1);
 		pr_warn("pmd %p != %p, %p\n",
@@ -728,18 +732,18 @@ void __init early_fixmap_init(void)
 void __set_fixmap(enum fixed_addresses idx,
 			       phys_addr_t phys, pgprot_t flags)
 {
-	unsigned long addr = __fix_to_virt(idx);
+	unsigned long addr = __fix_to_virt(idx); 						// idx에 해당하는 fixmap 주소를 리턴
 	pte_t *pte;
 
-	BUG_ON(idx <= FIX_HOLE || idx >= __end_of_fixed_addresses);
+	BUG_ON(idx <= FIX_HOLE || idx >= __end_of_fixed_addresses); 	// 메모리가 fixmap 영역안에 있는 지 확인 
 
-	pte = fixmap_pte(addr);
+	pte = fixmap_pte(addr);											// idx 에 해당하는 pte 주소를 리턴
 
-	if (pgprot_val(flags)) {
-		set_pte(pte, pfn_pte(phys >> PAGE_SHIFT, flags));
+	if (pgprot_val(flags)) {										// pgprot을 사용할 경우 flags.pgprot 리턴 아닌 경우 flags 리턴
+		set_pte(pte, pfn_pte(phys >> PAGE_SHIFT, flags));			// pte에 물리 메모리 매핑
 	} else {
-		pte_clear(&init_mm, addr, pte);
-		flush_tlb_kernel_range(addr, addr+PAGE_SIZE);
+		pte_clear(&init_mm, addr, pte);								// 물리 메모리 언매핑
+		flush_tlb_kernel_range(addr, addr+PAGE_SIZE);				// cache clear
 	}
 }
 
