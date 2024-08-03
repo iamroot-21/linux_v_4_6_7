@@ -363,16 +363,16 @@ static struct vmap_area *alloc_vmap_area(unsigned long size,
 	BUG_ON(offset_in_page(size));
 	BUG_ON(!is_power_of_2(align));
 
-	va = kmalloc_node(sizeof(struct vmap_area),
+	va = kmalloc_node(sizeof(struct vmap_area),									//vmap_area 할당
 			gfp_mask & GFP_RECLAIM_MASK, node);
-	if (unlikely(!va))
+	if (unlikely(!va))															//vmap_area 가 할당되지 않은 경우 FAIL
 		return ERR_PTR(-ENOMEM);
 
 	/*
 	 * Only scan the relevant parts containing pointers to other objects
 	 * to avoid false negatives.
 	 */
-	kmemleak_scan_area(&va->rb_node, SIZE_MAX, gfp_mask & GFP_RECLAIM_MASK);
+	kmemleak_scan_area(&va->rb_node, SIZE_MAX, gfp_mask & GFP_RECLAIM_MASK);	// memory leak check
 
 retry:
 	spin_lock(&vmap_area_lock);
@@ -385,10 +385,10 @@ retry:
 	 * Note that __free_vmap_area may update free_vmap_cache
 	 * without updating cached_hole_size or cached_align.
 	 */
-	if (!free_vmap_cache ||
-			size < cached_hole_size ||
-			vstart < cached_vstart ||
-			align < cached_align) {
+	if (!free_vmap_cache ||														// free_vmap_cache가 할당되지 않은 경우
+			size < cached_hole_size ||											// size가 맞지 않는 경우
+			vstart < cached_vstart ||											// cache_vstart 지점이 일치하지 않는 경우
+			align < cached_align) {												// cache_align이 비정상적인 경우
 nocache:
 		cached_hole_size = 0;
 		free_vmap_cache = NULL;
@@ -398,27 +398,28 @@ nocache:
 	cached_align = align;
 
 	/* find starting point for our search */
-	if (free_vmap_cache) {
-		first = rb_entry(free_vmap_cache, struct vmap_area, rb_node);
-		addr = ALIGN(first->va_end, align);
-		if (addr < vstart)
+	if (free_vmap_cache) {														// 이전에 할당 해제한 캐시가 있는 경우
+		first = rb_entry(free_vmap_cache, struct vmap_area, rb_node);			// free_vmap_cache 가 저장된 vmap_area 포인터를 가져옴
+		addr = ALIGN(first->va_end, align);										// vmap_area 시작 주소
+		if (addr < vstart)														// valid check
 			goto nocache;
-		if (addr + size < addr)
+		if (addr + size < addr)													// 0xFFFF + 1 = 0x0000, 자료형 오버플로를 방지하는 코드로 추정
 			goto overflow;
 
 	} else {
-		addr = ALIGN(vstart, align);
-		if (addr + size < addr)
+		addr = ALIGN(vstart, align);											// vmap_area 시작 주소
+		if (addr + size < addr)													// valid check
 			goto overflow;
 
 		n = vmap_area_root.rb_node;
 		first = NULL;
 
-		while (n) {
+		// 코드로 알아보는 ARM 리눅스 커널 책 그림 3-28
+		while (n) {																// rb-tree 순회
 			struct vmap_area *tmp;
 			tmp = rb_entry(n, struct vmap_area, rb_node);
 			if (tmp->va_end >= addr) {
-				first = tmp;
+				first = tmp;													// vmap_area_root 주소 입력
 				if (tmp->va_start <= addr)
 					break;
 				n = n->rb_left;
@@ -426,44 +427,44 @@ nocache:
 				n = n->rb_right;
 		}
 
-		if (!first)
+		if (!first)																// search 용으로 실행한 경우 found 지점으로 이동
 			goto found;
 	}
 
-	/* from the starting point, walk areas until a suitable hole is found */
-	while (addr + size > first->va_start && addr + size <= vend) {
-		if (addr + cached_hole_size < first->va_start)
+	/* from the starting point, walk areas until a suitable hole is found */	// 코드로 알아보는 ARM 리눅스 커널 책 그림 3-27
+	while (addr + size > first->va_start && addr + size <= vend) {				// first->va_start 부터 vend 까지 list 순회
+		if (addr + cached_hole_size < first->va_start)							// search 중 비어있는 위치를 발견할 경우 static 변수에 저장
 			cached_hole_size = first->va_start - addr;
-		addr = ALIGN(first->va_end, align);
+		addr = ALIGN(first->va_end, align);										// 다음 주소 값 업데이트
 		if (addr + size < addr)
 			goto overflow;
 
-		if (list_is_last(&first->list, &vmap_area_list))
+		if (list_is_last(&first->list, &vmap_area_list))						
 			goto found;
 
-		first = list_next_entry(first, list);
+		first = list_next_entry(first, list);									// list 순회 주소 업데이트
 	}
 
 found:
-	if (addr + size > vend)
+	if (addr + size > vend)														// 예외처리
 		goto overflow;
 
 	va->va_start = addr;
 	va->va_end = addr + size;
 	va->flags = 0;
-	__insert_vmap_area(va);
-	free_vmap_cache = &va->rb_node;
+	__insert_vmap_area(va);														// 새로 생성한 rb-tree 를 기존 트리에 입력
+	free_vmap_cache = &va->rb_node;												// 현재 vmap_area를 cahcing
 	spin_unlock(&vmap_area_lock);
 
 	BUG_ON(!IS_ALIGNED(va->va_start, align));
 	BUG_ON(va->va_start < vstart);
 	BUG_ON(va->va_end > vend);
 
-	return va;
+	return va;																	// vmap_area
 
 overflow:
 	spin_unlock(&vmap_area_lock);
-	if (!purged) {
+	if (!purged) {																// 할당 해제 1회 진행
 		purge_vmap_area_lazy();
 		purged = 1;
 		goto retry;
@@ -472,7 +473,7 @@ overflow:
 		pr_warn("vmap allocation for size %lu failed: use vmalloc=<size> to increase size\n",
 			size);
 	kfree(va);
-	return ERR_PTR(-EBUSY);
+	return ERR_PTR(-EBUSY);														// 1회 retry 이후에도 공간이 없는 경우 FAIL
 }
 
 static void __free_vmap_area(struct vmap_area *va)
@@ -1333,22 +1334,22 @@ static struct vm_struct *__get_vm_area_node(unsigned long size,
 	struct vm_struct *area;
 
 	BUG_ON(in_interrupt());
-	if (flags & VM_IOREMAP)
-		align = 1ul << clamp_t(int, fls_long(size),
+	if (flags & VM_IOREMAP)													// IOREMAP 요청이 있는 경우, Align 값을 정함
+		align = 1ul << clamp_t(int, fls_long(size),							// size가 PAGE_SHIFT보다 작거나, IOREMAP_MAX_ORDER 보다 큰 경우 예외처리
 				       PAGE_SHIFT, IOREMAP_MAX_ORDER);
 
-	size = PAGE_ALIGN(size);
-	if (unlikely(!size))
+	size = PAGE_ALIGN(size);												// 페이즈 사이즈에 맞지 않는 경우 맞춰줌
+	if (unlikely(!size))													// 0인 경우 FAIL
 		return NULL;
 
-	area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);
-	if (unlikely(!area))
+	area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);	// kmallc(vmap_area), memset(0) ***TODO Slob 할당 관련 부분 코드 분석 필요
+	if (unlikely(!area))													// 할당받지 못한 경우 FAIL
 		return NULL;
 
-	if (!(flags & VM_NO_GUARD))
-		size += PAGE_SIZE;
+	if (!(flags & VM_NO_GUARD))												// GUARD가 필요한 경우
+		size += PAGE_SIZE;													// 1개 페이지를 비워두고 시작
 
-	va = alloc_vmap_area(size, align, start, end, node, gfp_mask);
+	va = alloc_vmap_area(size, align, start, end, node, gfp_mask);			
 	if (IS_ERR(va)) {
 		kfree(area);
 		return NULL;
@@ -1549,22 +1550,22 @@ void *vmap(struct page **pages, unsigned int count,
 {
 	struct vm_struct *area;
 
-	might_sleep();
+	might_sleep();												// 우선 순위가 높은 task가 있을 경우 sleep
 
-	if (count > totalram_pages)
+	if (count > totalram_pages) 								// totalram_page 보다 요청한 페이지 개수가 많은 경우 FAIL
 		return NULL;
 
 	area = get_vm_area_caller((count << PAGE_SHIFT), flags,
 					__builtin_return_address(0));
-	if (!area)
+	if (!area)													// get fail 시 FAIL 처리
 		return NULL;
 
-	if (map_vm_area(area, prot, pages)) {
+	if (map_vm_area(area, prot, pages)) {						
 		vunmap(area->addr);
 		return NULL;
 	}
 
-	return area->addr;
+	return area->addr;											// vmem 주소 리턴
 }
 EXPORT_SYMBOL(vmap);
 
