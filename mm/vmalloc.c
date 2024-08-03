@@ -1342,20 +1342,20 @@ static struct vm_struct *__get_vm_area_node(unsigned long size,
 	if (unlikely(!size))													// 0인 경우 FAIL
 		return NULL;
 
-	area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);	// kmallc(vmap_area), memset(0) ***TODO Slob 할당 관련 부분 코드 분석 필요
+	area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);	// vm_struct 할당
 	if (unlikely(!area))													// 할당받지 못한 경우 FAIL
 		return NULL;
 
 	if (!(flags & VM_NO_GUARD))												// GUARD가 필요한 경우
 		size += PAGE_SIZE;													// 1개 페이지를 비워두고 시작
 
-	va = alloc_vmap_area(size, align, start, end, node, gfp_mask);			
+	va = alloc_vmap_area(size, align, start, end, node, gfp_mask);			// vmap_area 할당
 	if (IS_ERR(va)) {
 		kfree(area);
 		return NULL;
 	}
 
-	setup_vmalloc_vm(area, va, flags, caller);
+	setup_vmalloc_vm(area, va, flags, caller);								// vm_struct 에 vmap area 할당
 
 	return area;
 }
@@ -1555,12 +1555,12 @@ void *vmap(struct page **pages, unsigned int count,
 	if (count > totalram_pages) 								// totalram_page 보다 요청한 페이지 개수가 많은 경우 FAIL
 		return NULL;
 
-	area = get_vm_area_caller((count << PAGE_SHIFT), flags,
+	area = get_vm_area_caller((count << PAGE_SHIFT), flags,		// vm_struct 할당
 					__builtin_return_address(0));
 	if (!area)													// get fail 시 FAIL 처리
 		return NULL;
 
-	if (map_vm_area(area, prot, pages)) {						
+	if (map_vm_area(area, prot, pages)) {						// vm_struct에 있는 주소를 paging, pgd 등록
 		vunmap(area->addr);
 		return NULL;
 	}
