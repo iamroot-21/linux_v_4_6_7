@@ -33,7 +33,7 @@ static void __iomem *__ioremap_caller(phys_addr_t phys_addr, size_t size,
 				      pgprot_t prot, void *caller)
 {
 	unsigned long last_addr;
-	unsigned long offset = phys_addr & ~PAGE_MASK;
+	unsigned long offset = phys_addr & ~PAGE_MASK; // offset = 0x0___
 	int err;
 	unsigned long addr;
 	struct vm_struct *area;
@@ -43,34 +43,41 @@ static void __iomem *__ioremap_caller(phys_addr_t phys_addr, size_t size,
 	 * offset.
 	 */
 	phys_addr &= PAGE_MASK;
+	// |<-------page------->|<-------page------->|
+	// |<---offset---><--size --> |
+	// ㄴ phys_addr   ㄴoffset
+	//
+	// |<--------size + offset----------->|
+	// |<-------page------->|<-------page------->|
+	// In this case, size = 2 * page
 	size = PAGE_ALIGN(size + offset);
 
 	/*
 	 * Don't allow wraparound, zero size or outside PHYS_MASK.
 	 */
-	last_addr = phys_addr + size - 1;
+	last_addr = phys_addr + size - 1;  // 0x(zzzz_z)fff
 	if (!size || last_addr < phys_addr || (last_addr & ~PHYS_MASK))
 		return NULL;
 
 	/*
 	 * Don't allow RAM to be mapped.
 	 */
-	if (WARN_ON(pfn_valid(__phys_to_pfn(phys_addr))))
+	if (WARN_ON(pfn_valid(__phys_to_pfn(phys_addr)))) // 램에 매핑되어있는 경우는 처리 할 필요 없음
 		return NULL;
 
-	area = get_vm_area_caller(size, VM_IOREMAP, caller);
+	area = get_vm_area_caller(size, VM_IOREMAP, caller); // vm 가상영역에 할당을 하고 vm_struct 를 받아옵니다.
 	if (!area)
 		return NULL;
 	addr = (unsigned long)area->addr;
 	area->phys_addr = phys_addr;
 
-	err = ioremap_page_range(addr, addr + size, phys_addr, prot);
+	err = ioremap_page_range(addr, addr + size, phys_addr, prot); // 매핑한 가상 주소를 페이지 테이블에 등록합니다. (pgd->pud..)
 	if (err) {
 		vunmap((void *)addr);
 		return NULL;
 	}
 
-	return (void __iomem *)(offset + addr);
+	return (void __iomem *)(offset + addr); // 가상 주소 + offset 값을 리턴합니다.
 }
 
 void __iomem *__ioremap(phys_addr_t phys_addr, size_t size, pgprot_t prot)
@@ -96,8 +103,8 @@ EXPORT_SYMBOL(__iounmap);
 void __iomem *ioremap_cache(phys_addr_t phys_addr, size_t size)
 {
 	/* For normal memory we already have a cacheable mapping. */
-	if (pfn_valid(__phys_to_pfn(phys_addr)))
-		return (void __iomem *)__phys_to_virt(phys_addr);
+	if (pfn_valid(__phys_to_pfn(phys_addr)))              // 매핑하려는 주소가 RAM 영역이라면, 이미 매핑이 되어있습니다.
+		return (void __iomem *)__phys_to_virt(phys_addr); // 물리주소를 가상주소로 변경하여 리턴합니다.
 
 	return __ioremap_caller(phys_addr, size, __pgprot(PROT_NORMAL),
 				__builtin_return_address(0));
