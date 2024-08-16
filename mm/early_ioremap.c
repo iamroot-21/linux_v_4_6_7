@@ -69,11 +69,11 @@ void __init early_ioremap_setup(void)
 	int i;
 
 	for (i = 0; i < FIX_BTMAPS_SLOTS; i++)
-		if (WARN_ON(prev_map[i]))
+		if (WARN_ON(prev_map[i])) // io remapping 이 먼저 되어있었다면 경고를 출력
 			break;
 
 	for (i = 0; i < FIX_BTMAPS_SLOTS; i++)
-		slot_virt[i] = __fix_to_virt(FIX_BTMAP_BEGIN - NR_FIX_BTMAPS*i);
+		slot_virt[i] = __fix_to_virt(FIX_BTMAP_BEGIN - NR_FIX_BTMAPS*i); // slot 에 7개의 가상 주소를 설정
 }
 
 static int __init check_early_ioremap_leak(void)
@@ -108,12 +108,12 @@ __early_ioremap(resource_size_t phys_addr, unsigned long size, pgprot_t prot)
 	slot = -1;
 	for (i = 0; i < FIX_BTMAPS_SLOTS; i++) {
 		if (!prev_map[i]) {
-			slot = i;
+			slot = i; // 사용하지 않은 슬롯이 있다면 break
 			break;
 		}
 	}
 
-	if (WARN(slot < 0, "%s(%08llx, %08lx) not found slot\n",
+	if (WARN(slot < 0, "%s(%08llx, %08lx) not found slot\n", // 슬롯을 찾지 못한 경우 early io reamp 을 할수 없음
 		 __func__, (u64)phys_addr, size))
 		return NULL;
 
@@ -122,28 +122,28 @@ __early_ioremap(resource_size_t phys_addr, unsigned long size, pgprot_t prot)
 	if (WARN_ON(!size || last_addr < phys_addr))
 		return NULL;
 
-	prev_size[slot] = size;
+	prev_size[slot] = size; // 할당할 size 등록
 	/*
 	 * Mappings have to be page-aligned
 	 */
-	offset = offset_in_page(phys_addr);
+	offset = offset_in_page(phys_addr); // 4K page 0x1000 인 경우 0x0___
 	phys_addr &= PAGE_MASK;
-	size = PAGE_ALIGN(last_addr + 1) - phys_addr;
+	size = PAGE_ALIGN(last_addr + 1) - phys_addr; // 전체 페이지의 사이즈
 
 	/*
 	 * Mappings have to fit in the FIX_BTMAP area.
 	 */
-	nrpages = size >> PAGE_SHIFT;
-	if (WARN_ON(nrpages > NR_FIX_BTMAPS))
+	nrpages = size >> PAGE_SHIFT;         // 전체 페이지 갯수
+	if (WARN_ON(nrpages > NR_FIX_BTMAPS)) // 256 KB 더 커지는 경우를 방지하고자 한것으로 보입니다.
 		return NULL;
 
 	/*
 	 * Ok, go for it..
 	 */
-	idx = FIX_BTMAP_BEGIN - NR_FIX_BTMAPS*slot;
+	idx = FIX_BTMAP_BEGIN - NR_FIX_BTMAPS*slot; // fixmap 영역의 idx
 	while (nrpages > 0) {
 		if (after_paging_init)
-			__late_set_fixmap(idx, phys_addr, prot);
+			__late_set_fixmap(idx, phys_addr, prot); // early page mapping 이 끝났다면 더이상 early mapping 할 필요 없음
 		else
 			__early_set_fixmap(idx, phys_addr, prot);
 		phys_addr += PAGE_SIZE;
@@ -153,6 +153,8 @@ __early_ioremap(resource_size_t phys_addr, unsigned long size, pgprot_t prot)
 	WARN(early_ioremap_debug, "%s(%08llx, %08lx) [%d] => %08lx + %08lx\n",
 	     __func__, (u64)phys_addr, size, slot, offset, slot_virt[slot]);
 
+    // slot_virt 는 이미 고정되어있던 값이고, offset 을 더한 값을 prev_map 에 저장.
+    // 어떻게 사용하는지는 이후 확인해봐야 할 듯 합니다
 	prev_map[slot] = (void __iomem *)(offset + slot_virt[slot]);
 	return prev_map[slot];
 }

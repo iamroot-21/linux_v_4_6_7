@@ -480,14 +480,19 @@ static void __free_vmap_area(struct vmap_area *va)
 {
 	BUG_ON(RB_EMPTY_NODE(&va->rb_node));
 
-	if (free_vmap_cache) {
+	if (free_vmap_cache) { // 마지막으로 사용한 free_vmap_cache 가 있는 경우, 삭제될때는 삭제한 이전 노드를 가리키게 합니다.
 		if (va->va_end < cached_vstart) {
 			free_vmap_cache = NULL;
 		} else {
 			struct vmap_area *cache;
 			cache = rb_entry(free_vmap_cache, struct vmap_area, rb_node);
-			if (va->va_start <= cache->va_start) {
-				free_vmap_cache = rb_prev(&va->rb_node);
+
+			// |----------cached----------prev-va---free-va-------------|
+			//              ㄴ free_vmap_cahced
+			// |-----prev-va----free-va--------------cached----------|
+			//         ㄴ free_vmap_cahced
+			if (va->va_start <= cache->va_start) {       // 더 작은 주소에 있는 노드를 free_vmap_cached 로 설정
+				free_vmap_cache = rb_prev(&va->rb_node); // 삭제되는 va 의 이전 노드 값으로 free_vmap_cache 를 설정
 				/*
 				 * We don't try to update cached_hole_size or
 				 * cached_align, but it won't go very wrong.
@@ -569,7 +574,7 @@ static unsigned long lazy_max_pages(void)
 {
 	unsigned int log;
 
-	log = fls(num_online_cpus());
+	log = fls(num_online_cpus()); // 1 -> 1, 2 ~ 3 -> 2, 4 ~ 7 -> 3
 
 	return log * (32UL * 1024 * 1024 / PAGE_SIZE);
 }
@@ -613,31 +618,31 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 	 * the case that isn't actually used at the moment anyway.
 	 */
 	if (!sync && !force_flush) {
-		if (!spin_trylock(&purge_lock))
+		if (!spin_trylock(&purge_lock)) // (!sync && !force flush)  락을 시도하고, 락을 잡지 못하면 처리하지 않음
 			return;
 	} else
-		spin_lock(&purge_lock);
+		spin_lock(&purge_lock);         // sync 이거나 force flush 일때는 락을 잡을때까지 시도
 
 	if (sync)
-		purge_fragmented_blocks_allcpus();
+		purge_fragmented_blocks_allcpus(); // vm_map_ram 을 사용해서 만들었던 vmap_block 을 사용할때 사용하는 코드로 3절에서 크게 다루지 않음
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(va, &vmap_area_list, list) {
-		if (va->flags & VM_LAZY_FREE) {
+		if (va->flags & VM_LAZY_FREE) { // 지연 삭제 플래그를 설정해둔 vm_area 에 대해서 처리
 			if (va->va_start < *start)
 				*start = va->va_start;
 			if (va->va_end > *end)
 				*end = va->va_end;
-			nr += (va->va_end - va->va_start) >> PAGE_SHIFT;
-			list_add_tail(&va->purge_list, &valist);
-			va->flags |= VM_LAZY_FREEING;
-			va->flags &= ~VM_LAZY_FREE;
+			nr += (va->va_end - va->va_start) >> PAGE_SHIFT; // 삭제하는 페이지의 갯수
+			list_add_tail(&va->purge_list, &valist);         // 삭제할 vm_area 를 list 에 추가
+			va->flags |= VM_LAZY_FREEING;                    // 지연삭제를 진행중인 플래그 설정
+			va->flags &= ~VM_LAZY_FREE;                      // 지연삭제 예정 플레그를 제거
 		}
 	}
 	rcu_read_unlock();
 
 	if (nr)
-		atomic_sub(nr, &vmap_lazy_nr);
+		atomic_sub(nr, &vmap_lazy_nr); // 전체 삭제예정인 페이지 갯수에서, 삭제할 페이지 갯수만큼 빼기
 
 	if (nr || force_flush)
 		flush_tlb_kernel_range(*start, *end);
@@ -645,7 +650,7 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 	if (nr) {
 		spin_lock(&vmap_area_lock);
 		list_for_each_entry_safe(va, n_va, &valist, purge_list)
-			__free_vmap_area(va);
+			__free_vmap_area(va); // free_vmap_area 를 변경하고, va 를 지운다
 		spin_unlock(&vmap_area_lock);
 	}
 	spin_unlock(&purge_lock);
@@ -679,10 +684,10 @@ static void purge_vmap_area_lazy(void)
  */
 static void free_vmap_area_noflush(struct vmap_area *va)
 {
-	va->flags |= VM_LAZY_FREE;
-	atomic_add((va->va_end - va->va_start) >> PAGE_SHIFT, &vmap_lazy_nr);
-	if (unlikely(atomic_read(&vmap_lazy_nr) > lazy_max_pages()))
-		try_purge_vmap_area_lazy();
+	va->flags |= VM_LAZY_FREE;                                             // 지연 삭제 플래그를 설정
+	atomic_add((va->va_end - va->va_start) >> PAGE_SHIFT, &vmap_lazy_nr);  // 지연 삭제할 페이지를 더함
+	if (unlikely(atomic_read(&vmap_lazy_nr) > lazy_max_pages()))           // 미리 정해둔 한도를 넘었을때
+		try_purge_vmap_area_lazy();                                        // 지연 예약했던페이지를 삭제
 }
 
 /*
@@ -691,7 +696,7 @@ static void free_vmap_area_noflush(struct vmap_area *va)
  */
 static void free_unmap_vmap_area_noflush(struct vmap_area *va)
 {
-	unmap_vmap_area(va);
+	unmap_vmap_area(va);  // 가상주소 --> 물리주소 매핑을 페이지 테이블에서 해제
 	free_vmap_area_noflush(va);
 }
 
@@ -700,7 +705,7 @@ static void free_unmap_vmap_area_noflush(struct vmap_area *va)
  */
 static void free_unmap_vmap_area(struct vmap_area *va)
 {
-	flush_cache_vunmap(va->va_start, va->va_end);
+	flush_cache_vunmap(va->va_start, va->va_end); // ARM 64 에서는 캐시 타입이 PIPT 이기 때문에 캐시를 플러시 하지 않음
 	free_unmap_vmap_area_noflush(va);
 }
 
@@ -894,30 +899,58 @@ static void purge_fragmented_blocks(int cpu)
 	struct vmap_block *n_vb;
 	struct vmap_block_queue *vbq = &per_cpu(vmap_block_queue, cpu);
 
+	// cpu1  cpu2  cpu3
+	//  |     |     |
+	// vbq   vbq   vbq
+	//  |     |     |
+	// vb    vb     vb   // -> vbq->free
+	//  |
+	//  vb   
+	//  |
+	//  vb
+
 	rcu_read_lock();
 	list_for_each_entry_rcu(vb, &vbq->free, free_list) {
-
-		if (!(vb->free + vb->dirty == VMAP_BBMAP_BITS && vb->dirty != VMAP_BBMAP_BITS))
+		// vmap_block 추측
+		//
+		// 맨 처음 상태
+		// free =  000000
+		// dirty = 100000
+		//
+        // 1비트에 있는 페이지를 할당
+		// free =  011110
+		// dirty = 000000
+		//
+		// 1비트에 있는 페이지를 free 할때
+		// free =  011110
+		// dirty = 000001
+		if (!(
+			vb->free + vb->dirty == VMAP_BBMAP_BITS && // 할당을 한 후에 아직 free 되지 않은 페이지가 남아있는 상태
+			vb->dirty != VMAP_BBMAP_BITS               // 초기화후 아직 무언가 하지 않은 상태
+		))
 			continue;
 
 		spin_lock(&vb->lock);
-		if (vb->free + vb->dirty == VMAP_BBMAP_BITS && vb->dirty != VMAP_BBMAP_BITS) {
+		if (
+			vb->free + vb->dirty == VMAP_BBMAP_BITS && // 할당했던 페이지가 모두 free 된 상태 이고
+			vb->dirty != VMAP_BBMAP_BITS               // 초기화 하고 한번이라도 사용한상태
+		) {
 			vb->free = 0; /* prevent further allocs after releasing lock */
 			vb->dirty = VMAP_BBMAP_BITS; /* prevent purging it again */
 			vb->dirty_min = 0;
 			vb->dirty_max = VMAP_BBMAP_BITS;
 			spin_lock(&vbq->lock);
-			list_del_rcu(&vb->free_list);
+			list_del_rcu(&vb->free_list); // vb 를 리스트에서 제거
 			spin_unlock(&vbq->lock);
 			spin_unlock(&vb->lock);
-			list_add_tail(&vb->purge, &purge);
+			list_add_tail(&vb->purge, &purge); // vb 에 있는 purge 제거하기 위해 리스트에 넣어둔다
 		} else
 			spin_unlock(&vb->lock);
 	}
 	rcu_read_unlock();
 
 	list_for_each_entry_safe(vb, n_vb, &purge, purge) {
-		list_del(&vb->purge);
+		list_del(&vb->purge); // purge 에 있는 list 를 돌면서 vb 제거
 		free_vmap_block(vb);
 	}
 }
