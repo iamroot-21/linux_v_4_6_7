@@ -10,6 +10,7 @@
 # Normal rules
 #
 .*
+.vscode/*
 *.o
 *.o.*
 *.a
@@ -65,6 +66,10 @@ Module.symvers
 #
 !.gitignore
 !.mailmap
+
+# 단, settings.json 파일은 포함
+!.vscode/settings.json.temp
+!.vscode/
 
 #
 # Generated include files
