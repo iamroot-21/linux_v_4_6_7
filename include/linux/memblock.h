@@ -1,7 +1,9 @@
 #ifndef _LINUX_MEMBLOCK_H
 #define _LINUX_MEMBLOCK_H
+#define __KERNEL__
 #ifdef __KERNEL__
 
+#define CONFIG_HAVE_MEMBLOCK
 #ifdef CONFIG_HAVE_MEMBLOCK
 /*
  * Logical memory blocks.

@@ -168,19 +168,19 @@ early_param("mem", early_mem);
 
 void __init arm64_memblock_init(void)
 {
-	const s64 linear_region_size = -(s64)PAGE_OFFSET;
+	const s64 linear_region_size = -(s64)PAGE_OFFSET;								//  1 << (39-1)
 
 	/*
 	 * Ensure that the linear region takes up exactly half of the kernel
 	 * virtual address space. This way, we can distinguish a linear address
 	 * from a kernel/module/vmalloc address by testing a single bit.
 	 */
-	BUILD_BUG_ON(linear_region_size != BIT(VA_BITS - 1));
+	BUILD_BUG_ON(linear_region_size != BIT(VA_BITS - 1));							// 1 << (39 -1) != (VA_BITS -1) 
 
 	/*
 	 * Select a suitable value for the base of physical memory.
 	 */
-	memstart_addr = round_down(memblock_start_of_DRAM(),
+	memstart_addr = round_down(memblock_start_of_DRAM(),							// 설정에 맞춰서 PUD 크기로 정렬하여 사용
 				   ARM64_MEMSTART_ALIGN);
 
 	/*
@@ -188,9 +188,9 @@ void __init arm64_memblock_init(void)
 	 * linear mapping. Take care not to clip the kernel which may be
 	 * high in memory.
 	 */
-	memblock_remove(max_t(u64, memstart_addr + linear_region_size, __pa(_end)),
+	memblock_remove(max_t(u64, memstart_addr + linear_region_size, __pa(_end)),		// memstart 부터 linear_region_size 를 초과하는 지점의 memblock 제거
 			ULLONG_MAX);
-	if (memblock_end_of_DRAM() > linear_region_size)
+	if (memblock_end_of_DRAM() > linear_region_size)								// 물리 메모리가 256GB 보다 큰 경우 그 이상의 memblock 제거
 		memblock_remove(0, memblock_end_of_DRAM() - linear_region_size);
 
 	/*
@@ -198,14 +198,14 @@ void __init arm64_memblock_init(void)
 	 * high up in memory, add back the kernel region that must be accessible
 	 * via the linear mapping.
 	 */
-	if (memory_limit != (phys_addr_t)ULLONG_MAX) {
-		memblock_enforce_memory_limit(memory_limit);
-		memblock_add(__pa(_text), (u64)(_end - _text));
+	if (memory_limit != (phys_addr_t)ULLONG_MAX) {									// memory_limit 가 설정이 변경된 경우
+		memblock_enforce_memory_limit(memory_limit);1								// 루프를 순회하여 메모리 영역 계산, 초과하는 memblock 제거
+		memblock_add(__pa(_text), (u64)(_end - _text));								// Kernel 영역 만큼의 memblock 생성
 	}
 
-	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE)) {
+	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE)) {										// Randomize
 		extern u16 memstart_offset_seed;
-		u64 range = linear_region_size -
+		u64 range = linear_region_size - 											// region_size - total_memblock_size
 			    (memblock_end_of_DRAM() - memblock_start_of_DRAM());
 
 		/*
@@ -215,7 +215,7 @@ void __init arm64_memblock_init(void)
 		 */
 		if (memstart_offset_seed > 0 && range >= ARM64_MEMSTART_ALIGN) {
 			range = range / ARM64_MEMSTART_ALIGN + 1;
-			memstart_addr -= ARM64_MEMSTART_ALIGN *
+			memstart_addr -= ARM64_MEMSTART_ALIGN *									// memstart 지점을 랜덤하게 변경
 					 ((range * memstart_offset_seed) >> 16);
 		}
 	}
@@ -224,9 +224,9 @@ void __init arm64_memblock_init(void)
 	 * Register the kernel text, kernel data, initrd, and initial
 	 * pagetables with memblock.
 	 */
-	memblock_reserve(__pa(_text), _end - _text);
+	memblock_reserve(__pa(_text), _end - _text);									// Kernel 영역 reserve
 #ifdef CONFIG_BLK_DEV_INITRD
-	if (initrd_start) {
+	if (initrd_start) {																// Ramdisk 를 가상 주소로 변환하여 할당
 		memblock_reserve(initrd_start, initrd_end - initrd_start);
 
 		/* the generic initrd code expects virtual addresses */
@@ -245,7 +245,7 @@ void __init arm64_memblock_init(void)
 	dma_contiguous_reserve(arm64_dma_phys_limit);
 
 	memblock_allow_resize();
-	memblock_dump_all();
+	memblock_dump_all(); 
 }
 
 void __init bootmem_init(void)
