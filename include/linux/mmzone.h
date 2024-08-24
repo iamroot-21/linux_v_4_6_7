@@ -1006,6 +1006,7 @@ static inline unsigned long early_pfn_to_nid(unsigned long pfn)
 #define pfn_to_nid(pfn)		(0)
 #endif
 
+#define CONFIG_SPARSEMEM
 #ifdef CONFIG_SPARSEMEM
 
 /*
@@ -1088,7 +1089,7 @@ static inline struct mem_section *__nr_to_section(unsigned long nr)
 {
 	if (!mem_section[SECTION_NR_TO_ROOT(nr)])
 		return NULL;
-	return &mem_section[SECTION_NR_TO_ROOT(nr)][nr & SECTION_ROOT_MASK];
+	return &mem_section[SECTION_NR_TO_ROOT(nr)][nr & SECTION_ROOT_MASK];			// 섹션 번호를 실제 mem_section 구조체 포인터로 변경 후 리턴
 }
 extern int __section_nr(struct mem_section* ms);
 extern unsigned long usemap_size(void);

@@ -296,13 +296,21 @@ again:
 
 static void __init_memblock memblock_remove_region(struct memblock_type *type, unsigned long r)
 {
-	type->total_size -= type->regions[r].size;
-	memmove(&type->regions[r], &type->regions[r + 1],
+	// before
+	// ----------------------------------------------------------------------
+	// |   alloc   |   target  |   alloc   |   alloc   |          |         |
+	// ----------------------------------------------------------------------
+	// memmove
+	// ----------------------------------------------------------------------
+	// |   alloc   |   alloc   |   alloc   |           |         |          |
+	// ----------------------------------------------------------------------
+	type->total_size -= type->regions[r].size;										// region 사이즈 만큼 total size 감소
+	memmove(&type->regions[r], &type->regions[r + 1],								// 지울 region을 memmove 덮어씀0
 		(type->cnt - (r + 1)) * sizeof(type->regions[r]));
-	type->cnt--;
+	type->cnt--;																	// region count 감소
 
 	/* Special case for empty arrays */
-	if (type->cnt == 0) {
+	if (type->cnt == 0) {															// region count 가 0인 경우 ininitialize
 		WARN_ON(type->total_size != 0);
 		type->cnt = 1;
 		type->regions[0].base = 0;
@@ -696,56 +704,90 @@ static int __init_memblock memblock_isolate_range(struct memblock_type *type,
 					phys_addr_t base, phys_addr_t size,
 					int *start_rgn, int *end_rgn)
 {
-	phys_addr_t end = base + memblock_cap_size(base, &size);
+	phys_addr_t end = base + memblock_cap_size(base, &size);							// end point
 	int idx;
 	struct memblock_region *rgn;
 
-	*start_rgn = *end_rgn = 0;
+	*start_rgn = *end_rgn = 0;															// out 값 초기화
 
 	if (!size)
 		return 0;
 
 	/* we'll create at most two more regions */
-	while (type->cnt + 2 > type->max)
-		if (memblock_double_array(type, base, size) < 0)
+	while (type->cnt + 2 > type->max)													// 기존 memblock 에서 추가 될 block이 있으므로 사이즈 체크
+		if (memblock_double_array(type, base, size) < 0)								// 추가 될 block 사이즈 보다 array 가 작을 경우 array double size
 			return -ENOMEM;
 
 	for_each_memblock_type(type, rgn) {
 		phys_addr_t rbase = rgn->base;
 		phys_addr_t rend = rbase + rgn->size;
 
-		if (rbase >= end)
+
+		// -----------  end
+		// |         |
+		// |         | rbase > end
+		// |---------|
+		// |         | end
+		// |         | base
+		// |---------|
+		// |         | rend <= base
+		// -----------  start
+		if (rbase >= end)					
 			break;
 		if (rend <= base)
 			continue;
 
+		// ----------- rend 
+		// |         | end    <----
+		// |         | base   <----
+		// |         |
+		// -----------  rbase
 		if (rbase < base) {
 			/*
 			 * @rgn intersects from below.  Split and continue
 			 * to process the next region - the new top half.
 			 */
+			// ----------- rend 
+			// |         | end    <----
+			// |         | base   <----
+			// -----------
+			// |   new   |
+			// -----------  rbase
 			rgn->base = base;
 			rgn->size -= base - rbase;
 			type->total_size -= base - rbase;
-			memblock_insert_region(type, idx, rbase, base - rbase,
+			memblock_insert_region(type, idx, rbase, base - rbase,					// memblock array에 입력
 					       memblock_get_region_node(rgn),
 					       rgn->flags);
 		} else if (rend > end) {
+			// -----------  rend
+			// |         |
+			// |         | 
+			// |         | end    <----
+			// -----------  rbase
+			// |         | base   <----
+			// -----------  before rbase
 			/*
 			 * @rgn intersects from above.  Split and redo the
 			 * current region - the new bottom half.
 			 */
+			// -----------  rend
+			// |   new   |
+			// |         | 
+			// -----------
+			// |         | end    <----
+			// -----------  rbase
 			rgn->base = end;
 			rgn->size -= end - rbase;
 			type->total_size -= end - rbase;
-			memblock_insert_region(type, idx--, rbase, end - rbase,
+			memblock_insert_region(type, idx--, rbase, end - rbase,					// memblcok array에 입력
 					       memblock_get_region_node(rgn),
 					       rgn->flags);
 		} else {
 			/* @rgn is fully contained, record it */
 			if (!*end_rgn)
-				*start_rgn = idx;
-			*end_rgn = idx + 1;
+				*start_rgn = idx;													// 메모리 영역 인덱스 값 전달
+			*end_rgn = idx + 1;														// 메모리 영역 end 인덱스 값 전달
 		}
 	}
 
@@ -758,12 +800,12 @@ static int __init_memblock memblock_remove_range(struct memblock_type *type,
 	int start_rgn, end_rgn;
 	int i, ret;
 
-	ret = memblock_isolate_range(type, base, size, &start_rgn, &end_rgn);
+	ret = memblock_isolate_range(type, base, size, &start_rgn, &end_rgn);			// memblock 에서 base, size 만큼의 영역을 분리함, 분리한 메모리 영역을 start_rgn, end_rgn 으로 리턴 받음
 	if (ret)
 		return ret;
 
 	for (i = end_rgn - 1; i >= start_rgn; i--)
-		memblock_remove_region(type, i);
+		memblock_remove_region(type, i);											// memblock 영역 제거
 	return 0;
 }
 

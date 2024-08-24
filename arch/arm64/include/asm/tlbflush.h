@@ -68,7 +68,7 @@ static inline void local_flush_tlb_all(void)
 	dsb(nshst);							// data sync (non-secure hypervisor shareable)
 	asm("tlbi	vmalle1");				// TLB Invalidate 명령을 실행한 PE에만 적용
 	dsb(nsh);							// data sync (non-shared)
-	isb();								// instruction sync, 파이프라인을 비운다.
+	isb();								// instruction sync,
 }
 
 static inline void flush_tlb_all(void)

@@ -5377,6 +5377,7 @@ static inline void setup_usemap(struct pglist_data *pgdat, struct zone *zone,
 				unsigned long zone_start_pfn, unsigned long zonesize) {}
 #endif /* CONFIG_SPARSEMEM */
 
+#define CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
 #ifdef CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
 
 /* Initialise the number of pages represented by NR_PAGEBLOCK_BITS */

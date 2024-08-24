@@ -134,6 +134,7 @@ int pfn_valid(unsigned long pfn)
 EXPORT_SYMBOL(pfn_valid);
 #endif
 
+#define CONFIG_SPARSEMEM
 #ifndef CONFIG_SPARSEMEM
 static void __init arm64_memory_present(void)
 {
@@ -235,36 +236,38 @@ void __init arm64_memblock_init(void)
 	}
 #endif
 
-	early_init_fdt_scan_reserved_mem();
+
+	early_init_fdt_scan_reserved_mem();												// TODO 분석 필요, FDT 에서 세 가지 영역 추가 (DTB 영역, DTB 헤더의 memory reserve 블록 영역, DTB reserved-mem 노드 영역)
 
 	/* 4GB maximum for 32-bit only capable devices */
 	if (IS_ENABLED(CONFIG_ZONE_DMA))
-		arm64_dma_phys_limit = max_zone_dma_phys();
+		arm64_dma_phys_limit = max_zone_dma_phys();									// TODO 분석 필요 (DMA Zone 설정)
 	else
 		arm64_dma_phys_limit = PHYS_MASK + 1;
-	dma_contiguous_reserve(arm64_dma_phys_limit);
+	dma_contiguous_reserve(arm64_dma_phys_limit);									// TODO 분석 필요
 
-	memblock_allow_resize();
-	memblock_dump_all(); 
+	memblock_allow_resize();														// resize 허용 플래그 설정
+	memblock_dump_all();															// 디버깅 코드
 }
 
 void __init bootmem_init(void)
 {
 	unsigned long min, max;
 
-	min = PFN_UP(memblock_start_of_DRAM());
-	max = PFN_DOWN(memblock_end_of_DRAM());
+	// TODO PFN_UP, PFN DOWN 사용 이유 확인 필요
+	min = PFN_UP(memblock_start_of_DRAM());											// memblock index = 0, base 값의 페이지 프레임 넘버를 가져옴
+	max = PFN_DOWN(memblock_end_of_DRAM());											// memblock 마지막 index의 end 값의 페이지 프레임 넘버를 가져옴
 
-	early_memtest(min << PAGE_SHIFT, max << PAGE_SHIFT);
-
+	early_memtest(min << PAGE_SHIFT, max << PAGE_SHIFT);							// min, max 값에 memtest_pattern 에서 설정한 값을 써서 실제로 써지는 지 확인
+																					// 값이 안써지는 경우 bad mem으로 reserve
 	/*
 	 * Sparsemem tries to allocate bootmem in memory_present(), so must be
 	 * done after the fixed reservations.
 	 */
-	arm64_memory_present();
+	arm64_memory_present();															// mem_section allocation
 
-	sparse_init();
-	zone_sizes_init(min, max);
+	sparse_init();																	// sparse memory model 일 경우, 초기화 진행
+	zone_sizes_init(min, max);														// zone 별로 메모리 영역 초기화
 
 	high_memory = __va((max << PAGE_SHIFT) - 1) + 1;
 	max_pfn = max_low_pfn = max;
