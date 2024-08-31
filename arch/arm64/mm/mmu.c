@@ -607,7 +607,9 @@ int kern_addr_valid(unsigned long addr)
 
 	return pfn_valid(pte_pfn(*pte));
 }
+#define CONFIG_SPARSEMEM_VMEMMAP														// 임시 선언
 #ifdef CONFIG_SPARSEMEM_VMEMMAP
+#define ARM64_SWAPPER_USES_SECTION_MAPS 1												// 임시 선언
 #if !ARM64_SWAPPER_USES_SECTION_MAPS
 int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 {
@@ -616,6 +618,12 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 #else	/* !ARM64_SWAPPER_USES_SECTION_MAPS */
 int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 {
+	/**
+	 * \arg [in]start page 포인터의 주소 값
+	 * \arg [in]end page 포인터의 마지막 주소 값
+	 * \arg [in]node nodeid
+	 */
+
 	unsigned long addr = start;
 	unsigned long next;
 	pgd_t *pgd;
@@ -637,11 +645,11 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 		if (pmd_none(*pmd)) {
 			void *p = NULL;
 
-			p = vmemmap_alloc_block_buf(PMD_SIZE, node);
+			p = vmemmap_alloc_block_buf(PMD_SIZE, node);		// node 사이즈 만큼 PMD allocation
 			if (!p)
 				return -ENOMEM;
 
-			set_pmd(pmd, __pmd(__pa(p) | PROT_SECT_NORMAL));
+			set_pmd(pmd, __pmd(__pa(p) | PROT_SECT_NORMAL));	// pmd set
 		} else
 			vmemmap_verify((pte_t *)pmd, node, addr, next);
 	} while (addr = next, addr != end);

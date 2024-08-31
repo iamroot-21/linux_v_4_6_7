@@ -260,7 +260,7 @@ static unsigned long *__kmalloc_section_usemap(void)
 	return kmalloc(usemap_size(), GFP_KERNEL);
 }
 #endif /* CONFIG_MEMORY_HOTPLUG */
-
+#define CONFIG_MEMORY_HOTREMOVE
 #ifdef CONFIG_MEMORY_HOTREMOVE
 static unsigned long * __init
 sparse_early_usemaps_alloc_pgdat_section(struct pglist_data *pgdat,
@@ -279,43 +279,43 @@ sparse_early_usemaps_alloc_pgdat_section(struct pglist_data *pgdat,
 	 * from the same section as the pgdat where possible to avoid
 	 * this problem.
 	 */
-	goal = __pa(pgdat) & (PAGE_SECTION_MASK << PAGE_SHIFT);
-	limit = goal + (1UL << PA_SECTION_SHIFT);
-	nid = early_pfn_to_nid(goal >> PAGE_SHIFT);
+	goal = __pa(pgdat) & (PAGE_SECTION_MASK << PAGE_SHIFT);					// 물리 주소 시작점
+	limit = goal + (1UL << PA_SECTION_SHIFT);								// 1개 Section size
+	nid = early_pfn_to_nid(goal >> PAGE_SHIFT);								// 섹션별 노드 정보를 가져옴
 again:
-	p = memblock_virt_alloc_try_nid_nopanic(size,
+	p = memblock_virt_alloc_try_nid_nopanic(size,							// goal부터 limit 사이즈 만큼을 할당 시도
 						SMP_CACHE_BYTES, goal, limit,
 						nid);
-	if (!p && limit) {
-		limit = 0;
+	if (!p && limit) {														// 할당이 되지 않았을 경우
+		limit = 0;															// limit를 0으로 만든 뒤 재시도
 		goto again;
 	}
-	return p;
+	return p;																// 할당 받은 메모리를 리턴
 }
 
 static void __init check_usemap_section_nr(int nid, unsigned long *usemap)
 {
 	unsigned long usemap_snr, pgdat_snr;
-	static unsigned long old_usemap_snr = NR_MEM_SECTIONS;
-	static unsigned long old_pgdat_snr = NR_MEM_SECTIONS;
+	static unsigned long old_usemap_snr = NR_MEM_SECTIONS;					// static 초기화
+	static unsigned long old_pgdat_snr = NR_MEM_SECTIONS;					// static 초기화
 	struct pglist_data *pgdat = NODE_DATA(nid);
 	int usemap_nid;
 
-	usemap_snr = pfn_to_section_nr(__pa(usemap) >> PAGE_SHIFT);
-	pgdat_snr = pfn_to_section_nr(__pa(pgdat) >> PAGE_SHIFT);
-	if (usemap_snr == pgdat_snr)
+	usemap_snr = pfn_to_section_nr(__pa(usemap) >> PAGE_SHIFT);				// 실제 물리 주소 값에서 section number로 변경
+	pgdat_snr = pfn_to_section_nr(__pa(pgdat) >> PAGE_SHIFT);				// 실제 물리 주소 값에서 section number로 변경
+	if (usemap_snr == pgdat_snr)											// 동일한 section인 경우
 		return;
 
-	if (old_usemap_snr == usemap_snr && old_pgdat_snr == pgdat_snr)
+	if (old_usemap_snr == usemap_snr && old_pgdat_snr == pgdat_snr)			// 이전에 출력했던 section인 경우 스킵
 		/* skip redundant message */
 		return;
 
-	old_usemap_snr = usemap_snr;
-	old_pgdat_snr = pgdat_snr;
+	old_usemap_snr = usemap_snr;											// static 변수 업데이트
+	old_pgdat_snr = pgdat_snr;												// static 변수 업데이트
 
-	usemap_nid = sparse_early_nid(__nr_to_section(usemap_snr));
-	if (usemap_nid != nid) {
-		pr_info("node %d must be removed before remove section %ld\n",
+	usemap_nid = sparse_early_nid(__nr_to_section(usemap_snr));				// section number -> nid
+	if (usemap_nid != nid) {												// usemap_nid가 nid 와 일치하지 않는 경우, 지워야하는 노드임
+		pr_info("node %d must be removed before remove section %ld\n",		// 로그 출력 후 리턴
 			nid, usemap_snr);
 		return;
 	}
@@ -326,7 +326,7 @@ static void __init check_usemap_section_nr(int nid, unsigned long *usemap)
 	 * Just notify un-removable section's number here.
 	 */
 	pr_info("Section %ld and %ld (node %d) have a circular dependency on usemap and pgdat allocations\n",
-		usemap_snr, pgdat_snr, nid);
+		usemap_snr, pgdat_snr, nid);										// 로그 출력
 }
 #else
 static unsigned long * __init
@@ -348,10 +348,10 @@ static void __init sparse_early_usemaps_alloc_node(void *data,
 {
 	void *usemap;
 	unsigned long pnum;
-	unsigned long **usemap_map = (unsigned long **)data;
-	int size = usemap_size();
+	unsigned long **usemap_map = (unsigned long **)data;								// void* -> ulong**
+	int size = usemap_size();															// usemap size를 가져옴 (128Byte 추정)
 
-	usemap = sparse_early_usemaps_alloc_pgdat_section(NODE_DATA(nodeid),
+	usemap = sparse_early_usemaps_alloc_pgdat_section(NODE_DATA(nodeid),				// 메모리 할당 요청, PASS 일 경우 할당 받은 메모리 주소를 리턴
 							  size * usemap_count);
 	if (!usemap) {
 		pr_warn("%s: allocation failed\n", __func__);
@@ -359,11 +359,11 @@ static void __init sparse_early_usemaps_alloc_node(void *data,
 	}
 
 	for (pnum = pnum_begin; pnum < pnum_end; pnum++) {
-		if (!present_section_nr(pnum))
+		if (!present_section_nr(pnum))													// valid check
 			continue;
-		usemap_map[pnum] = usemap;
-		usemap += size;
-		check_usemap_section_nr(nodeid, usemap_map[pnum]);
+		usemap_map[pnum] = usemap;														// 할당 받았던 usemap 을 usemap_map 에 입력
+		usemap += size;																	// usemap size만큼 index 증가
+		check_usemap_section_nr(nodeid, usemap_map[pnum]);								// 할당 받았던 메모리 데이터로 로그 출력
 	}
 }
 
@@ -373,15 +373,15 @@ struct page __init *sparse_mem_map_populate(unsigned long pnum, int nid)
 	struct page *map;
 	unsigned long size;
 
-	map = alloc_remap(nid, sizeof(struct page) * PAGES_PER_SECTION);
+	map = alloc_remap(nid, sizeof(struct page) * PAGES_PER_SECTION);					// Arm64에서 사용하지 않음
 	if (map)
 		return map;
 
 	size = PAGE_ALIGN(sizeof(struct page) * PAGES_PER_SECTION);
-	map = memblock_virt_alloc_try_nid(size,
+	map = memblock_virt_alloc_try_nid(size,												// 지정된 노드의 Memblock 에서 할당을 시도
 					  PAGE_SIZE, __pa(MAX_DMA_ADDRESS),
 					  BOOTMEM_ALLOC_ACCESSIBLE, nid);
-	return map;
+	return map;																			// 할당된 메모리 주소 리턴
 }
 void __init sparse_mem_maps_populate_node(struct page **map_map,
 					  unsigned long pnum_begin,
@@ -482,11 +482,11 @@ static void __init alloc_usemap_and_memmap(void (*alloc_func)
 	for (pnum = 0; pnum < NR_MEM_SECTIONS; pnum++) {
 		struct mem_section *ms;
 
-		if (!present_section_nr(pnum))
+		if (!present_section_nr(pnum))									// mem_section 할당이 되어있지 않거나, section이 존재하지 않는 경우
 			continue;
-		ms = __nr_to_section(pnum);
-		nodeid_begin = sparse_early_nid(ms);
-		pnum_begin = pnum;
+		ms = __nr_to_section(pnum);										// section number 으로 mem_section 을 가져옴
+		nodeid_begin = sparse_early_nid(ms);							// nodeid 값을 가져옴
+		pnum_begin = pnum;												// 시작 index 값 입력
 		break;
 	}
 	map_count = 1;
@@ -494,16 +494,16 @@ static void __init alloc_usemap_and_memmap(void (*alloc_func)
 		struct mem_section *ms;
 		int nodeid;
 
-		if (!present_section_nr(pnum))
+		if (!present_section_nr(pnum))									// valid check
 			continue;
-		ms = __nr_to_section(pnum);
+		ms = __nr_to_section(pnum);										// section number -> mem section
 		nodeid = sparse_early_nid(ms);
-		if (nodeid == nodeid_begin) {
-			map_count++;
+		if (nodeid == nodeid_begin) {									// 현재 nodeid 가 이전 nodeid와 동일한 경우
+			map_count++;												// 이후 할당할 때 사용할 map_count++ 이후 loop 재시작
 			continue;
 		}
 		/* ok, we need to take cake of from pnum_begin to pnum - 1*/
-		alloc_func(data, pnum_begin, pnum,
+		alloc_func(data, pnum_begin, pnum,								// 메모리 할당 함수 실행
 						map_count, nodeid_begin);
 		/* new start, update count etc*/
 		nodeid_begin = nodeid;
@@ -511,7 +511,7 @@ static void __init alloc_usemap_and_memmap(void (*alloc_func)
 		map_count = 1;
 	}
 	/* ok, last chunk */
-	alloc_func(data, pnum_begin, NR_MEM_SECTIONS,
+	alloc_func(data, pnum_begin, NR_MEM_SECTIONS,						// 마지막 인덱스 할당
 						map_count, nodeid_begin);
 }
 
@@ -552,7 +552,7 @@ void __init sparse_init(void)
 	usemap_map = memblock_virt_alloc(size, 0);										// usemap_map 메모리 할당
 	if (!usemap_map)
 		panic("can not allocate usemap_map\n");
-	alloc_usemap_and_memmap(sparse_early_usemaps_alloc_node,						// TODO 코드 4-21
+	alloc_usemap_and_memmap(sparse_early_usemaps_alloc_node,						// 메모리 할당
 							(void *)usemap_map);
 
 #ifdef CONFIG_SPARSEMEM_ALLOC_MEM_MAP_TOGETHER
@@ -560,36 +560,36 @@ void __init sparse_init(void)
 	map_map = memblock_virt_alloc(size2, 0);										// map_map 메모리 할당
 	if (!map_map)
 		panic("can not allocate map_map\n");
-	alloc_usemap_and_memmap(sparse_early_mem_maps_alloc_node,						// TODO 코드 4-21
+	alloc_usemap_and_memmap(sparse_early_mem_maps_alloc_node,						// 메모리 할당
 							(void *)map_map);
 #endif
 
 	for (pnum = 0; pnum < NR_MEM_SECTIONS; pnum++) {
-		if (!present_section_nr(pnum))
-			continue;
+		if (!present_section_nr(pnum))												// mem_section 메모리 할당이 되지 않았거나 + section이 존재하지 않을 경우
+			continue;																// 다음 pnum
 
 		usemap = usemap_map[pnum];
-		if (!usemap)
+		if (!usemap)																// 메모리가 할당이 안되었을 경우 continue
 			continue;
 
 #ifdef CONFIG_SPARSEMEM_ALLOC_MEM_MAP_TOGETHER
 		map = map_map[pnum];
 #else
-		map = sparse_early_mem_map_alloc(pnum);										// memory 할당
+		map = sparse_early_mem_map_alloc(pnum);										// 지정된 노드의 Memblock 에서 할당을 시도
 #endif
 		if (!map)
 			continue;
 
-		sparse_init_one_section(__nr_to_section(pnum), pnum, map,
+		sparse_init_one_section(__nr_to_section(pnum), pnum, map,					// 1 section 을 초기화
 								usemap);
 	}
 
 	vmemmap_populate_print_last();
 
-#ifdef CONFIG_SPARSEMEM_ALLOC_MEM_MAP_TOGETHER
+#ifdef CONFIG_SPARSEMEM_ALLOC_MEM_MAP_TOGETHER										// 임시 할당 받은 usemap_map 변수 할당 해제
 	memblock_free_early(__pa(map_map), size2);
 #endif
-	memblock_free_early(__pa(usemap_map), size);									// 임시 할당 받은 usemap_map 변수 할당 해제
+	memblock_free_early(__pa(usemap_map), size);
 }
 
 #ifdef CONFIG_MEMORY_HOTPLUG

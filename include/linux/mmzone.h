@@ -1114,7 +1114,8 @@ static inline struct page *__section_mem_map_addr(struct mem_section *section)
 
 static inline int present_section(struct mem_section *section)
 {
-	return (section && (section->section_mem_map & SECTION_MARKED_PRESENT));
+	return (section && 																// section이 메모리 할당이 되어 있음
+			(section->section_mem_map & SECTION_MARKED_PRESENT));					// section이 존재함
 }
 
 static inline int present_section_nr(unsigned long nr)

@@ -254,9 +254,9 @@ struct page * __meminit sparse_mem_map_populate(unsigned long pnum, int nid)
 	unsigned long end;
 	struct page *map;
 
-	map = pfn_to_page(pnum * PAGES_PER_SECTION);
-	start = (unsigned long)map;
-	end = (unsigned long)(map + PAGES_PER_SECTION);
+	map = pfn_to_page(pnum * PAGES_PER_SECTION);								// pfn to page
+	start = (unsigned long)map;													// page 포인터를 unsigned long으로 변환
+	end = (unsigned long)(map + PAGES_PER_SECTION);								// page 마지막 지점의 포인터를 unsigned long 으로 변환
 
 	if (vmemmap_populate(start, end, nid))
 		return NULL;

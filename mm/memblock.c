@@ -1370,8 +1370,8 @@ static void * __init memblock_virt_alloc_internal(
 	 * this moment memblock may be deinitialized already and its
 	 * internal data may be destroyed (after execution of free_all_bootmem)
 	 */
-	if (WARN_ON_ONCE(slab_is_available()))
-		return kzalloc_node(size, GFP_NOWAIT, nid);
+	if (WARN_ON_ONCE(slab_is_available()))											// slab 할당자가 활성화된 경우
+		return kzalloc_node(size, GFP_NOWAIT, nid);									// 메모리 할당 후 리턴
 
 	if (!align)
 		align = SMP_CACHE_BYTES;
@@ -1380,16 +1380,16 @@ static void * __init memblock_virt_alloc_internal(
 		max_addr = memblock.current_limit;
 
 again:
-	alloc = memblock_find_in_range_node(size, align, min_addr, max_addr,
+	alloc = memblock_find_in_range_node(size, align, min_addr, max_addr,			// memblock range에서 노드를 찾아 리턴
 					    nid, flags);
-	if (alloc)
+	if (alloc)																		// node가 있을 경우 마무리 코드로
 		goto done;
 
-	if (nid != NUMA_NO_NODE) {
+	if (nid != NUMA_NO_NODE) {														// NUMA_NO_NODE 인 경우 노드 find 코드
 		alloc = memblock_find_in_range_node(size, align, min_addr,
 						    max_addr, NUMA_NO_NODE,
 						    flags);
-		if (alloc)
+		if (alloc)																	// node가 있을 경우 마무리 코드로
 			goto done;
 	}
 
@@ -1407,9 +1407,9 @@ again:
 
 	return NULL;
 done:
-	memblock_reserve(alloc, size);
-	ptr = phys_to_virt(alloc);
-	memset(ptr, 0, size);
+	memblock_reserve(alloc, size);													// Memblock에 reserve 체크
+	ptr = phys_to_virt(alloc);														// Memblock 에서 받아온 주소 값으로 업데이트
+	memset(ptr, 0, size);															// 0으로 초기화
 
 	/*
 	 * The min_count is set to 0 so that bootmem allocated blocks
@@ -1419,7 +1419,7 @@ done:
 	 */
 	kmemleak_alloc(ptr, size, 0, 0);
 
-	return ptr;
+	return ptr;																		// 할당한 주소 값 리턴
 }
 
 /**
