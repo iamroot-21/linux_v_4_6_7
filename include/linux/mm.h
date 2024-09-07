@@ -2,7 +2,7 @@
 #define _LINUX_MM_H
 
 #include <linux/errno.h>
-
+#define __KERNEL__					// 임시 선언
 #ifdef __KERNEL__
 
 #include <linux/mmdebug.h>

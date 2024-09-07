@@ -88,42 +88,48 @@ static phys_addr_t __init max_zone_dma_phys(void)
 
 static void __init zone_sizes_init(unsigned long min, unsigned long max)
 {
+	/**
+	 * \args[in] min Page frame number(memblock_start_of_DRAM)
+	 * \args[in] max PaGE frame number(memblock_end_of_DRAM)
+	 */
 	struct memblock_region *reg;
-	unsigned long zone_size[MAX_NR_ZONES], zhole_size[MAX_NR_ZONES];
+	unsigned long zone_size[MAX_NR_ZONES], zhole_size[MAX_NR_ZONES];		// size 저장할 array 선언
 	unsigned long max_dma = min;
 
 	memset(zone_size, 0, sizeof(zone_size));
 
 	/* 4GB maximum for 32-bit only capable devices */
+#define CONFIG_ZONE_DMA														// 임시 선언
 #ifdef CONFIG_ZONE_DMA
-	max_dma = PFN_DOWN(arm64_dma_phys_limit);
-	zone_size[ZONE_DMA] = max_dma - min;
+	max_dma = PFN_DOWN(arm64_dma_phys_limit);							
+	zone_size[ZONE_DMA] = max_dma - min;									// dma max - min (남아있는 dma size)
 #endif
-	zone_size[ZONE_NORMAL] = max - max_dma;
+	zone_size[ZONE_NORMAL] = max - max_dma;									// max - min, DMA 사용 시, max - DMA영역 사이즈
 
 	memcpy(zhole_size, zone_size, sizeof(zhole_size));
 
 	for_each_memblock(memory, reg) {
-		unsigned long start = memblock_region_memory_base_pfn(reg);
-		unsigned long end = memblock_region_memory_end_pfn(reg);
+		unsigned long start = memblock_region_memory_base_pfn(reg);			// start region -> page frame number
+		unsigned long end = memblock_region_memory_end_pfn(reg);			// end region -> page frame number
 
 		if (start >= max)
 			continue;
 
 #ifdef CONFIG_ZONE_DMA
-		if (start < max_dma) {
+		if (start < max_dma) {												// dma hole이 남아있을 경우
 			unsigned long dma_end = min(end, max_dma);
-			zhole_size[ZONE_DMA] -= dma_end - start;
+			zhole_size[ZONE_DMA] -= dma_end - start;						// dma hole 업데이트
 		}
 #endif
-		if (end > max_dma) {
+		if (end > max_dma) {												// dma hole이 남아있지 않을 경우
 			unsigned long normal_end = min(end, max);
 			unsigned long normal_start = max(start, max_dma);
-			zhole_size[ZONE_NORMAL] -= normal_end - normal_start;
+			zhole_size[ZONE_NORMAL] -= normal_end - normal_start;			// zone hole 업데이트
 		}
 	}
 
 	free_area_init_node(0, zone_size, min, zhole_size);
+#undef CONFIG_ZONE_DMA															// 임시 선언
 }
 
 #ifdef CONFIG_HAVE_ARCH_PFN_VALID

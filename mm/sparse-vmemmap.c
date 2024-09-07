@@ -51,22 +51,22 @@ static void *vmemmap_buf_end;
 void * __meminit vmemmap_alloc_block(unsigned long size, int node)
 {
 	/* If the main allocator is up use that, fallback to bootmem. */
-	if (slab_is_available()) {
+	if (slab_is_available()) {											// 슬랩 할당자가 사용 가능한 경우
 		struct page *page;
 
-		if (node_state(node, N_HIGH_MEMORY))
+		if (node_state(node, N_HIGH_MEMORY))							// HIGH Memory 인 경우, (Arm64 에서 사용하지 않음)
 			page = alloc_pages_node(
 				node, GFP_KERNEL | __GFP_ZERO | __GFP_REPEAT,
 				get_order(size));
-		else
-			page = alloc_pages(
+		else															// Normal Case
+			page = alloc_pages(											// 1 page alloc
 				GFP_KERNEL | __GFP_ZERO | __GFP_REPEAT,
 				get_order(size));
-		if (page)
-			return page_address(page);
+		if (page)														// 할당을 제대로 받은 경우
+			return page_address(page);									// phys -> virt 변환 후 가상 메모리 전달
 		return NULL;
 	} else
-		return __earlyonly_bootmem_alloc(node, size, size,
+		return __earlyonly_bootmem_alloc(node, size, size,				// memblock 에서 1 page alloc
 				__pa(MAX_DMA_ADDRESS));
 }
 
@@ -75,17 +75,17 @@ static void * __meminit alloc_block_buf(unsigned long size, int node)
 {
 	void *ptr;
 
-	if (!vmemmap_buf)
-		return vmemmap_alloc_block(size, node);
+	if (!vmemmap_buf)													// vmemmap_buf 할당이 없었을 경우
+		return vmemmap_alloc_block(size, node);							// 메모리 할당 후 리턴
 
 	/* take the from buf */
 	ptr = (void *)ALIGN((unsigned long)vmemmap_buf, size);
-	if (ptr + size > vmemmap_buf_end)
-		return vmemmap_alloc_block(size, node);
+	if (ptr + size > vmemmap_buf_end)									// vmemmap_buf 사이즈 보다 큰 경우
+		return vmemmap_alloc_block(size, node);							// 메모리 할당 후 리턴
 
-	vmemmap_buf = ptr + size;
+	vmemmap_buf = ptr + size;											// vmemmap_buf 시작 주소 업데이트
 
-	return ptr;
+	return ptr;															// 주소 값 리턴
 }
 
 static unsigned long __meminit vmem_altmap_next_pfn(struct vmem_altmap *altmap)
@@ -172,13 +172,13 @@ void __meminit vmemmap_verify(pte_t *pte, int node,
 
 pte_t * __meminit vmemmap_pte_populate(pmd_t *pmd, unsigned long addr, int node)
 {
-	pte_t *pte = pte_offset_kernel(pmd, addr);
+	pte_t *pte = pte_offset_kernel(pmd, addr);									// pte 엔트리 주소를 구한다.
 	if (pte_none(*pte)) {
 		pte_t entry;
-		void *p = alloc_block_buf(PAGE_SIZE, node);
+		void *p = alloc_block_buf(PAGE_SIZE, node);								// 미리 할당받아 놓은 buf 에서 메모리 주소를 하나 가져옴 (없을 경우 새로 할당)
 		if (!p)
 			return NULL;
-		entry = pfn_pte(__pa(p) >> PAGE_SHIFT, PAGE_KERNEL);
+		entry = pfn_pte(__pa(p) >> PAGE_SHIFT, PAGE_KERNEL);					// 책) pte 엔트리가 할당한 mem_map 페이지를 가리키도록 매핑한다. (mem_map 변수 사용하지 않음, 확인 필요)
 		set_pte_at(&init_mm, addr, pte, entry);
 	}
 	return pte;
@@ -212,10 +212,10 @@ pgd_t * __meminit vmemmap_pgd_populate(unsigned long addr, int node)
 {
 	pgd_t *pgd = pgd_offset_k(addr);
 	if (pgd_none(*pgd)) {
-		void *p = vmemmap_alloc_block(PAGE_SIZE, node);
+		void *p = vmemmap_alloc_block(PAGE_SIZE, node);					// 1 page allocation 진행
 		if (!p)
 			return NULL;
-		pgd_populate(&init_mm, pgd, p);
+		pgd_populate(&init_mm, pgd, p);									// 할당받은 page를 pgd 매핑
 	}
 	return pgd;
 }
@@ -230,16 +230,16 @@ int __meminit vmemmap_populate_basepages(unsigned long start,
 	pte_t *pte;
 
 	for (; addr < end; addr += PAGE_SIZE) {
-		pgd = vmemmap_pgd_populate(addr, node);
+		pgd = vmemmap_pgd_populate(addr, node);							// 1 page 메모리 할당 및 pgd 등록0
 		if (!pgd)
 			return -ENOMEM;
-		pud = vmemmap_pud_populate(pgd, addr, node);
+		pud = vmemmap_pud_populate(pgd, addr, node);					// pud에 동일 시퀀스 반복
 		if (!pud)
 			return -ENOMEM;
-		pmd = vmemmap_pmd_populate(pud, addr, node);
+		pmd = vmemmap_pmd_populate(pud, addr, node);					// pmd에 동일 시퀀스 반복
 		if (!pmd)
 			return -ENOMEM;
-		pte = vmemmap_pte_populate(pmd, addr, node);
+		pte = vmemmap_pte_populate(pmd, addr, node);					// 코드 3-41
 		if (!pte)
 			return -ENOMEM;
 		vmemmap_verify(pte, node, addr, addr + PAGE_SIZE);

@@ -631,13 +631,13 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 	pmd_t *pmd;
 
 	do {
-		next = pmd_addr_end(addr, end);
+		next = pmd_addr_end(addr, end);							// 다음 pmd 엔트리가 관리할 vmemmap 가상 시작 주소를 구한다. (4K Page 기준 End 가 2MB 보다 클 경우 addr + 2MB 반환, 작을 경우 2MB 반환)
 
-		pgd = vmemmap_pgd_populate(addr, node);
+		pgd = vmemmap_pgd_populate(addr, node);					// 1 Page allocation 진행 이후 Pgd table 등록
 		if (!pgd)
 			return -ENOMEM;
 
-		pud = vmemmap_pud_populate(pgd, addr, node);
+		pud = vmemmap_pud_populate(pgd, addr, node);			// pgd_populate와 동일한 시퀀스를 pud 에서 진행
 		if (!pud)
 			return -ENOMEM;
 
@@ -645,7 +645,7 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node)
 		if (pmd_none(*pmd)) {
 			void *p = NULL;
 
-			p = vmemmap_alloc_block_buf(PMD_SIZE, node);		// node 사이즈 만큼 PMD allocation
+			p = vmemmap_alloc_block_buf(PMD_SIZE, node);		// 미리 할당 받은 메모리 중 하나를 가져옴 (없을 경우 새로 할당 받음)
 			if (!p)
 				return -ENOMEM;
 

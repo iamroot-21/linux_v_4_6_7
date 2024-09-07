@@ -4992,7 +4992,9 @@ int __meminit init_currently_empty_zone(struct zone *zone,
 	return 0;
 }
 
+#define CONFIG_HAVE_MEMBLOCK_NODE_MAP										// 임시 추가
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
+#undef CONFIG_HAVE_MEMBLOCK_NODE_MAP										// 임시 추가
 #ifndef CONFIG_HAVE_ARCH_EARLY_PFN_TO_NID
 
 /*
@@ -5126,17 +5128,25 @@ static void __meminit adjust_zone_range_for_zone_movable(int nid,
 					unsigned long *zone_start_pfn,
 					unsigned long *zone_end_pfn)
 {
+	/**
+	 * @param[in] nid node id
+	 * @param[in] zone_type zone type (maybe movable)
+	 * @param[in] node_start_pfn node start page frame number
+	 * @param[in] node_end_pfn node end page frame number
+	 * @param[out] zone_start_pfn zone_momvable 일 경우, zone_movable start pfn 리턴
+	 * @param[out] zone_end_pfn zone_movable 일 경우, zone_movable end pfn 리턴
+	 */
 	/* Only adjust if ZONE_MOVABLE is on this node */
 	if (zone_movable_pfn[nid]) {
 		/* Size ZONE_MOVABLE */
 		if (zone_type == ZONE_MOVABLE) {
-			*zone_start_pfn = zone_movable_pfn[nid];
-			*zone_end_pfn = min(node_end_pfn,
+			*zone_start_pfn = zone_movable_pfn[nid];							// Zone Movable 시작 지점 입력
+			*zone_end_pfn = min(node_end_pfn,									// Zone Movable 마지막 지점 입력
 				arch_zone_highest_possible_pfn[movable_zone]);
 
 		/* Check if this whole range is within ZONE_MOVABLE */
-		} else if (*zone_start_pfn >= zone_movable_pfn[nid])
-			*zone_start_pfn = *zone_end_pfn;
+		} else if (*zone_start_pfn >= zone_movable_pfn[nid])					// 존이 movable이 아닌 경우
+			*zone_start_pfn = *zone_end_pfn;									// 존 사이즈를 0으로 만듦
 	}
 }
 
@@ -5152,14 +5162,23 @@ static unsigned long __meminit zone_spanned_pages_in_node(int nid,
 					unsigned long *zone_end_pfn,
 					unsigned long *ignored)
 {
+	/**
+	 * @param[in] nid node id
+	 * @param[in] zone_type zone type
+	 * @param[in] node_start_pfn node start page frame 
+	 * @param[in] node_end_pfn node end page frame
+	 * @param[out] zone_start_pfn zone start page frame number
+	 * @param[out] zone_end_pfn zone end page frame number
+	 * @param[out] ignored no used
+	 */
 	/* When hotadd a new node from cpu_up(), the node should be empty */
 	if (!node_start_pfn && !node_end_pfn)
 		return 0;
 
 	/* Get the start and end of the zone */
-	*zone_start_pfn = arch_zone_lowest_possible_pfn[zone_type];
-	*zone_end_pfn = arch_zone_highest_possible_pfn[zone_type];
-	adjust_zone_range_for_zone_movable(nid, zone_type,
+	*zone_start_pfn = arch_zone_lowest_possible_pfn[zone_type];							// start pfn 입력
+	*zone_end_pfn = arch_zone_highest_possible_pfn[zone_type];							// end pfn 입력
+	adjust_zone_range_for_zone_movable(nid, zone_type,									// start_pfn, end_pfn
 				node_start_pfn, node_end_pfn,
 				zone_start_pfn, zone_end_pfn);
 
@@ -5168,11 +5187,11 @@ static unsigned long __meminit zone_spanned_pages_in_node(int nid,
 		return 0;
 
 	/* Move the zone boundaries inside the node if necessary */
-	*zone_end_pfn = min(*zone_end_pfn, node_end_pfn);
-	*zone_start_pfn = max(*zone_start_pfn, node_start_pfn);
+	*zone_end_pfn = min(*zone_end_pfn, node_end_pfn);									// end pfn 오버플로우 체크
+	*zone_start_pfn = max(*zone_start_pfn, node_start_pfn);								// start pfn 언더플로우 체크
 
 	/* Return the spanned pages */
-	return *zone_end_pfn - *zone_start_pfn;
+	return *zone_end_pfn - *zone_start_pfn;												// 사이즈 리턴
 }
 
 /*
@@ -5305,21 +5324,28 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 						unsigned long *zones_size,
 						unsigned long *zholes_size)
 {
+	/**
+	 * @param[out] pgdat pgdat 구조체
+	 * @param[in] node_start_pfn start page frame number
+	 * @param[in] node_end_pfn end page frame number
+	 * @param[in] zones_size zones size array
+	 * @param[in] zholes_size zholes size array
+	 */
 	unsigned long realtotalpages = 0, totalpages = 0;
 	enum zone_type i;
 
 	for (i = 0; i < MAX_NR_ZONES; i++) {
-		struct zone *zone = pgdat->node_zones + i;
+		struct zone *zone = pgdat->node_zones + i;										// zone == pgdat->node_zones[i]
 		unsigned long zone_start_pfn, zone_end_pfn;
 		unsigned long size, real_size;
 
-		size = zone_spanned_pages_in_node(pgdat->node_id, i,
+		size = zone_spanned_pages_in_node(pgdat->node_id, i,							// zone 사이즈를 리턴
 						  node_start_pfn,
 						  node_end_pfn,
 						  &zone_start_pfn,
 						  &zone_end_pfn,
 						  zones_size);
-		real_size = size - zone_absent_pages_in_node(pgdat->node_id, i,
+		real_size = size - zone_absent_pages_in_node(pgdat->node_id, i,					// 코드 4-33
 						  node_start_pfn, node_end_pfn,
 						  zholes_size);
 		if (size)
@@ -5587,40 +5613,48 @@ static void __init_refok alloc_node_mem_map(struct pglist_data *pgdat)
 #endif /* CONFIG_FLAT_NODE_MEM_MAP */
 }
 
+
 void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 		unsigned long node_start_pfn, unsigned long *zholes_size)
 {
-	pg_data_t *pgdat = NODE_DATA(nid);
+	/**
+	 * @param[in] nid node id
+	 * @param[in] zones_size zone 구역 사이즈를 저장한 배열
+	 * @param[in] node_start_pfn 시작 노드의 페이지 프레임 넘버
+	 * @param[in] zholes_size zone 구역의 빈 공간 (hole) 을 저장한 배열
+	 */
+	pg_data_t *pgdat = NODE_DATA(nid);											// &contig_page_data
 	unsigned long start_pfn = 0;
 	unsigned long end_pfn = 0;
 
 	/* pg_data_t should be reset to zero when it's allocated */
 	WARN_ON(pgdat->nr_zones || pgdat->classzone_idx);
 
-	reset_deferred_meminit(pgdat);
+	reset_deferred_meminit(pgdat);												// Initialize the pg_data_t
 	pgdat->node_id = nid;
 	pgdat->node_start_pfn = node_start_pfn;
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
-	get_pfn_range_for_nid(nid, &start_pfn, &end_pfn);
+	get_pfn_range_for_nid(nid, &start_pfn, &end_pfn);							// start_pfn, end_pfn을 가져옴
 	pr_info("Initmem setup node %d [mem %#018Lx-%#018Lx]\n", nid,
 		(u64)start_pfn << PAGE_SHIFT,
 		end_pfn ? ((u64)end_pfn << PAGE_SHIFT) - 1 : 0);
 #else
 	start_pfn = node_start_pfn;
 #endif
-	calculate_node_totalpages(pgdat, start_pfn, end_pfn,
+	calculate_node_totalpages(pgdat, start_pfn, end_pfn,						// 코드 4-30
 				  zones_size, zholes_size);
 
-	alloc_node_mem_map(pgdat);
+	alloc_node_mem_map(pgdat);													// 코드 4-35
 #ifdef CONFIG_FLAT_NODE_MEM_MAP
 	printk(KERN_DEBUG "free_area_init_node: node %d, pgdat %08lx, node_mem_map %08lx\n",
 		nid, (unsigned long)pgdat,
 		(unsigned long)pgdat->node_mem_map);
 #endif
 
-	free_area_init_core(pgdat);
+	free_area_init_core(pgdat);													// 코드 4-36
 }
 
+#define CONFIG_HAVE_MEMBLOCK_NODE_MAP											// 임시 선언
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
 
 #if MAX_NUMNODES > 1
@@ -5902,7 +5936,7 @@ restart:
 			size_pages = end_pfn - start_pfn;
 			if (size_pages > kernelcore_remaining)
 				size_pages = kernelcore_remaining;
-			zone_movable_pfn[nid] = start_pfn + size_pages;
+		zone_movable_pfn[nid] = start_pfn + size_pages;
 
 			/*
 			 * Some kernelcore has been met, update counts and
@@ -5930,12 +5964,12 @@ restart:
 out2:
 	/* Align start of ZONE_MOVABLE on all nids to MAX_ORDER_NR_PAGES */
 	for (nid = 0; nid < MAX_NUMNODES; nid++)
-		zone_movable_pfn[nid] =
+		zone_movable_pfn[nid] =														// 위 시퀀스에서 입력한 zone_movable_pfn overflow check
 			roundup(zone_movable_pfn[nid], MAX_ORDER_NR_PAGES);
 
 out:
 	/* restore the node_state */
-	node_states[N_MEMORY] = saved_node_state;
+	node_states[N_MEMORY] = saved_node_state;										// node_states 업데이트
 }
 
 /* Any regular or high memory on that node ? */
@@ -5973,6 +6007,9 @@ static void check_for_memory(pg_data_t *pgdat, int nid)
  */
 void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 {
+	/**
+	 * @param[in] max_zone_pfn d zone_pfn 배열의 최대 값
+	 */
 	unsigned long start_pfn, end_pfn;
 	int i, nid;
 
@@ -5983,6 +6020,12 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 				sizeof(arch_zone_highest_possible_pfn));
 	arch_zone_lowest_possible_pfn[0] = find_min_pfn_with_active_regions();
 	arch_zone_highest_possible_pfn[0] = max_zone_pfn[0];
+	/*
+	* arch_zone_lowest_possible_pfn[0] = min
+	* arch_zone_lowest_possible_pfn[1] = arch_zone_highest_possible_pfn[0]
+	* arch_zone_lowest_possible_pfn[2] = arch_zone_highest_possible_pfn[1]
+									...
+	*/
 	for (i = 1; i < MAX_NR_ZONES; i++) {
 		if (i == ZONE_MOVABLE)
 			continue;
@@ -5996,11 +6039,11 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 
 	/* Find the PFNs that ZONE_MOVABLE begins at in each node */
 	memset(zone_movable_pfn, 0, sizeof(zone_movable_pfn));
-	find_zone_movable_pfns_for_nodes();
+	find_zone_movable_pfns_for_nodes();													// ZONE_MOVABLE에 대한 시작 pfn 값을 zone_movable_pfn에 담아온다.
 
 	/* Print out the zone ranges */
 	pr_info("Zone ranges:\n");
-	for (i = 0; i < MAX_NR_ZONES; i++) {
+	for (i = 0; i < MAX_NR_ZONES; i++) {												// 출력용 코드
 		if (i == ZONE_MOVABLE)
 			continue;
 		pr_info("  %-8s ", zone_names[i]);
@@ -6016,7 +6059,7 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 	}
 
 	/* Print out the PFNs ZONE_MOVABLE begins at in each node */
-	pr_info("Movable zone start for each node\n");
+	pr_info("Movable zone start for each node\n");										// 출력용 코드
 	for (i = 0; i < MAX_NUMNODES; i++) {
 		if (zone_movable_pfn[i])
 			pr_info("  Node %d: %#018Lx\n", i,
@@ -6025,25 +6068,26 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 
 	/* Print out the early node map */
 	pr_info("Early memory node ranges\n");
-	for_each_mem_pfn_range(i, MAX_NUMNODES, &start_pfn, &end_pfn, &nid)
+	for_each_mem_pfn_range(i, MAX_NUMNODES, &start_pfn, &end_pfn, &nid)					// 출력용 코드
 		pr_info("  node %3d: [mem %#018Lx-%#018Lx]\n", nid,
 			(u64)start_pfn << PAGE_SHIFT,
 			((u64)end_pfn << PAGE_SHIFT) - 1);
 
 	/* Initialise every node */
-	mminit_verify_pageflags_layout();
-	setup_nr_node_ids();
+	mminit_verify_pageflags_layout();													// SECTIONS_WIDTH 체크 함수
+	setup_nr_node_ids();																// node에서 마지막 possible 노드 + 1을 전역 nr_node_ids에 설정
 	for_each_online_node(nid) {
 		pg_data_t *pgdat = NODE_DATA(nid);
-		free_area_init_node(nid, NULL,
+		free_area_init_node(nid, NULL,													// 코드 4-29
 				find_min_pfn_for_node(nid), NULL);
 
 		/* Any memory on that node */
 		if (pgdat->node_present_pages)
-			node_set_state(nid, N_MEMORY);
-		check_for_memory(pgdat, nid);
+			node_set_state(nid, N_MEMORY);												// 해당 노드에 가용 페이지가 존재한다면 메모리 노드 비트맵의 해당 노트 비트를 1로 설정한다.
+		check_for_memory(pgdat, nid);													// Validation
 	}
 }
+#undef CONFIG_HAVE_MEMBLOCK_NODE_MAP 								// 임시 코드
 
 static int __init cmdline_parse_core(char *p, unsigned long *core)
 {

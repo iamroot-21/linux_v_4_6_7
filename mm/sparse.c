@@ -451,7 +451,7 @@ static struct page __init *sparse_early_mem_map_alloc(unsigned long pnum)
 	struct mem_section *ms = __nr_to_section(pnum);												// page number -> mem_section
 	int nid = sparse_early_nid(ms);																// mem_section -> nid
 
-	map = sparse_mem_map_populate(pnum, nid);
+	map = sparse_mem_map_populate(pnum, nid);													// memmap 사용 여부에 따라 호출 함수 달라짐, 메모리 영역 하나를 할당 받아 리턴함
 	if (map)
 		return map;
 
@@ -523,8 +523,8 @@ void __init sparse_init(void)
 {
 	unsigned long pnum;
 	struct page *map;
-	unsigned long *usemap;
-	unsigned long **usemap_map;
+	unsigned long *usemap;															// 최종적으로 메모리 할당을 진행할 array 변수
+	unsigned long **usemap_map;														// 임시 할당 용 변수, usemap을 array 로 사용하기 위해서 사용 (2차원 배열)
 	int size;
 #ifdef CONFIG_SPARSEMEM_ALLOC_MEM_MAP_TOGETHER
 	int size2;
