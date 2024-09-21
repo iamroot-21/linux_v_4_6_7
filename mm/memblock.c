@@ -1177,6 +1177,8 @@ void __init_memblock __next_mem_range_rev(u64 *idx, int nid, ulong flags,
 	*idx = ULLONG_MAX;
 }
 
+
+#define CONFIG_HAVE_MEMBLOCK_NODE_MAP
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
 /*
  * Common iterator interface used to define for_each_mem_range().
@@ -1185,18 +1187,25 @@ void __init_memblock __next_mem_pfn_range(int *idx, int nid,
 				unsigned long *out_start_pfn,
 				unsigned long *out_end_pfn, int *out_nid)
 {
+	/**
+	 * @param[out] idx region 개수
+	 * @param[in] nid node id
+	 * @param[out] out_start_pfn  마지막 memblock region 의 page frame number 
+	 * @param[out] out_end_pfn 마지막 memblock region 의 page frame number
+	 * @param[out] out_nid 마지막 memblock region 의 region node id 
+	 */
 	struct memblock_type *type = &memblock.memory;
 	struct memblock_region *r;
 
 	while (++*idx < type->cnt) {
-		r = &type->regions[*idx];
+		r = &type->regions[*idx];												// index에 해당하는 memblock region 값을 가져옴
 
-		if (PFN_UP(r->base) >= PFN_DOWN(r->base + r->size))
+		if (PFN_UP(r->base) >= PFN_DOWN(r->base + r->size))						// range가 넘어가는 지 확인
 			continue;
-		if (nid == MAX_NUMNODES || nid == r->nid)
+		if (nid == MAX_NUMNODES || nid == r->nid)								// Max Node를 넘어가거나 target node id 를 넘어가는 지 확인
 			break;
 	}
-	if (*idx >= type->cnt) {
+	if (*idx >= type->cnt) {													// overflow 케이스 확인
 		*idx = -1;
 		return;
 	}
@@ -1208,6 +1217,7 @@ void __init_memblock __next_mem_pfn_range(int *idx, int nid,
 	if (out_nid)
 		*out_nid = r->nid;
 }
+#undef CONFIG_HAVE_MEMBLOCK_NODE_MAP
 
 /**
  * memblock_set_node - set node ID on memblock regions
@@ -1393,9 +1403,9 @@ again:
 			goto done;
 	}
 
-	if (min_addr) {
+	if (min_addr) {																	// find 실패 했을 경우 min_addr 을 0으로 바꿈
 		min_addr = 0;
-		goto again;
+		goto again;																	// 전체 범위로 다시 find 진행
 	}
 
 	if (flags & MEMBLOCK_MIRROR) {

@@ -4594,11 +4594,15 @@ void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 #ifndef CONFIG_MEMORY_HOTPLUG
 static inline unsigned long wait_table_hash_nr_entries(unsigned long pages)
 {
+	/**
+	 * @details
+	 * @param[in] pages page count
+	 */
 	unsigned long size = 1;
 
-	pages /= PAGES_PER_WAITQUEUE;
+	pages /= PAGES_PER_WAITQUEUE;										// 사용할 page 개수를 WAITQUEUE 개수로 나눔
 
-	while (size < pages)
+	while (size < pages)												// size count 업데이트
 		size <<= 1;
 
 	/*
@@ -4652,7 +4656,15 @@ static inline unsigned long wait_table_bits(unsigned long size)
 void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		unsigned long start_pfn, enum memmap_context context)
 {
-	struct vmem_altmap *altmap = to_vmem_altmap(__pfn_to_phys(start_pfn));
+	/**
+	 * @details TBD
+	 * @param[in] size size
+	 * @param[in] nid node id
+	 * @param[in] zone zone index (struct 아님)
+	 * @param[in] start_pfn start page frame number
+	 * @param[in] context memmap_init으로 호출 시 MEMMAP_EARLY 고정
+	 */
+	struct vmem_altmap *altmap = to_vmem_altmap(__pfn_to_phys(start_pfn));	// start_pfn이 vmemmap 및 존 디바이스 메모리에 등록된 경우 vmemmap_populate 함수를 위해 사전에 할당된 영역정보를 구한다.
 	unsigned long end_pfn = start_pfn + size;
 	pg_data_t *pgdat = NODE_DATA(nid);
 	unsigned long pfn;
@@ -4661,14 +4673,14 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 	struct memblock_region *r = NULL, *tmp;
 #endif
 
-	if (highest_memmap_pfn < end_pfn - 1)
+	if (highest_memmap_pfn < end_pfn - 1)									// highest_memmap_pfn 값 보정
 		highest_memmap_pfn = end_pfn - 1;
 
 	/*
 	 * Honor reservation requested by the driver for this ZONE_DEVICE
 	 * memory
 	 */
-	if (altmap && start_pfn == altmap->base_pfn)
+	if (altmap && start_pfn == altmap->base_pfn)							// start_pfn 값이 0이 아닌 경우, start_pfn에 altmap->reserve 주소를 더함
 		start_pfn += altmap->reserve;
 
 	for (pfn = start_pfn; pfn < end_pfn; pfn++) {
@@ -4676,16 +4688,16 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		 * There can be holes in boot-time mem_map[]s handed to this
 		 * function.  They do not exist on hotplugged memory.
 		 */
-		if (context != MEMMAP_EARLY)
+		if (context != MEMMAP_EARLY)										// MEMAP_EARLY로 실행되지 않은 경우 스킵
 			goto not_early;
 
-		if (!early_pfn_valid(pfn))
+		if (!early_pfn_valid(pfn))											// pfn 이 유효하지 않은 경우 스킵
 			continue;
-		if (!early_pfn_in_nid(pfn, nid))
+		if (!early_pfn_in_nid(pfn, nid))									// 
 			continue;
-		if (!update_defer_init(pgdat, pfn, end_pfn, &nr_initialised))
+		if (!update_defer_init(pgdat, pfn, end_pfn, &nr_initialised))		// TODO 4-45) 하위 존을 제외한 노드가 2G를 초과하는 경우 초기화 유예
 			break;
-
+		// ... 4-43)
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
 		/*
 		 * If not mirrored_kernelcore and ZONE_MOVABLE exists, range
@@ -4913,6 +4925,11 @@ void __init setup_per_cpu_pageset(void)
 static noinline __init_refok
 int zone_wait_table_init(struct zone *zone, unsigned long zone_size_pages)
 {
+	/**
+	 * @details waitqueue 테이블의 할당을 받아 초기화한다.
+	 * @param[out] zone zone
+	 * @param[in] zone_size_pages TBD
+	 */
 	int i;
 	size_t alloc_size;
 
@@ -4927,8 +4944,8 @@ int zone_wait_table_init(struct zone *zone, unsigned long zone_size_pages)
 	alloc_size = zone->wait_table_hash_nr_entries
 					* sizeof(wait_queue_head_t);
 
-	if (!slab_is_available()) {
-		zone->wait_table = (wait_queue_head_t *)
+	if (!slab_is_available()) {															// slab 할당이 아닌 경우
+		zone->wait_table = (wait_queue_head_t *)										// memblock 할당
 			memblock_virt_alloc_node_nopanic(
 				alloc_size, zone->zone_pgdat->node_id);
 	} else {
@@ -4942,13 +4959,13 @@ int zone_wait_table_init(struct zone *zone, unsigned long zone_size_pages)
 		 * To use this new node's memory, further consideration will be
 		 * necessary.
 		 */
-		zone->wait_table = vmalloc(alloc_size);
+		zone->wait_table = vmalloc(alloc_size);											// vmalloc 할당
 	}
 	if (!zone->wait_table)
 		return -ENOMEM;
 
 	for (i = 0; i < zone->wait_table_hash_nr_entries; ++i)
-		init_waitqueue_head(zone->wait_table + i);
+		init_waitqueue_head(zone->wait_table + i);										// zone->wait_table 값 초기화
 
 	return 0;
 }
@@ -4972,22 +4989,28 @@ int __meminit init_currently_empty_zone(struct zone *zone,
 					unsigned long zone_start_pfn,
 					unsigned long size)
 {
+	/**
+	 * @details 현재 zone Initialize 진행
+	 * @param[out] zone zone
+	 * @param[in] zone_start_pfn zone start page frame number
+	 * @param[in] size page size (spanned pages size)
+	 */
 	struct pglist_data *pgdat = zone->zone_pgdat;
 	int ret;
-	ret = zone_wait_table_init(zone, size);
+	ret = zone_wait_table_init(zone, size);									// waitqueue 테이블의 할당을 받아 초기화한다.
 	if (ret)
 		return ret;
-	pgdat->nr_zones = zone_idx(zone) + 1;
+	pgdat->nr_zones = zone_idx(zone) + 1;									// 현재 존 인덱스 + 1로 저장
 
-	zone->zone_start_pfn = zone_start_pfn;
+	zone->zone_start_pfn = zone_start_pfn;									// start page frame number 저장
 
-	mminit_dprintk(MMINIT_TRACE, "memmap_init",
+	mminit_dprintk(MMINIT_TRACE, "memmap_init",								// 디버깅 코드
 			"Initialising map node %d zone %lu pfns %lu -> %lu\n",
 			pgdat->node_id,
 			(unsigned long)zone_idx(zone),
 			zone_start_pfn, (zone_start_pfn + size));
 
-	zone_init_free_lists(zone);
+	zone_init_free_lists(zone);												// Initialize the free_area list
 
 	return 0;
 }
@@ -5003,6 +5026,12 @@ int __meminit init_currently_empty_zone(struct zone *zone,
 int __meminit __early_pfn_to_nid(unsigned long pfn,
 					struct mminit_pfnnid_cache *state)
 {
+	/**
+	 * @details Search node id from pfn
+	 * @param[in] pfn page frame number
+	 * @param[out] state cache state
+	 * @return node id
+	 */
 	unsigned long start_pfn, end_pfn;
 	int nid;
 
@@ -5129,6 +5158,7 @@ static void __meminit adjust_zone_range_for_zone_movable(int nid,
 					unsigned long *zone_end_pfn)
 {
 	/**
+	 * @details Movable zone 영역을 조정한다.
 	 * @param[in] nid node id
 	 * @param[in] zone_type zone type (maybe movable)
 	 * @param[in] node_start_pfn node start page frame number
@@ -5202,16 +5232,22 @@ unsigned long __meminit __absent_pages_in_range(int nid,
 				unsigned long range_start_pfn,
 				unsigned long range_end_pfn)
 {
-	unsigned long nr_absent = range_end_pfn - range_start_pfn;
+	/**
+	 * @details 입력한 page range 에서 실제 page 수를 계산 후 리턴
+	 * @param[in] nid node id
+	 * @param[in] range_start_pfn start page frame number
+	 * @param[in] range_end_pfn end page frame number
+	 */
+	unsigned long nr_absent = range_end_pfn - range_start_pfn;							// 전체 zone 사이즈 계산
 	unsigned long start_pfn, end_pfn;
 	int i;
 
 	for_each_mem_pfn_range(i, nid, &start_pfn, &end_pfn, NULL) {
 		start_pfn = clamp(start_pfn, range_start_pfn, range_end_pfn);
 		end_pfn = clamp(end_pfn, range_start_pfn, range_end_pfn);
-		nr_absent -= end_pfn - start_pfn;
+		nr_absent -= end_pfn - start_pfn;												// 실제 page range 사이즈 계산해서 앞서 계산한 값에 적용
 	}
-	return nr_absent;
+	return nr_absent;																	// page 수 리턴
 }
 
 /**
@@ -5234,6 +5270,14 @@ static unsigned long __meminit zone_absent_pages_in_node(int nid,
 					unsigned long node_end_pfn,
 					unsigned long *ignored)
 {
+	/**
+	 * @details 요청 존에서 hole 페이지 수를 구한다.
+	 * @param[in] nid node id
+	 * @param[in] zone_type zone type
+	 * @param[in] node_start_pfn node start page frame number
+	 * @param[in] node_end_pfn node end page frame number
+	 * @param[out] ignored no used
+	 */
 	unsigned long zone_low = arch_zone_lowest_possible_pfn[zone_type];
 	unsigned long zone_high = arch_zone_highest_possible_pfn[zone_type];
 	unsigned long zone_start_pfn, zone_end_pfn;
@@ -5243,21 +5287,21 @@ static unsigned long __meminit zone_absent_pages_in_node(int nid,
 	if (!node_start_pfn && !node_end_pfn)
 		return 0;
 
-	zone_start_pfn = clamp(node_start_pfn, zone_low, zone_high);
-	zone_end_pfn = clamp(node_end_pfn, zone_low, zone_high);
+	zone_start_pfn = clamp(node_start_pfn, zone_low, zone_high);					// min, max 계산
+	zone_end_pfn = clamp(node_end_pfn, zone_low, zone_high);						// min, max 계산
 
-	adjust_zone_range_for_zone_movable(nid, zone_type,
+	adjust_zone_range_for_zone_movable(nid, zone_type,								// movable zone 영역 조정
 			node_start_pfn, node_end_pfn,
 			&zone_start_pfn, &zone_end_pfn);
-	nr_absent = __absent_pages_in_range(nid, zone_start_pfn, zone_end_pfn);
+	nr_absent = __absent_pages_in_range(nid, zone_start_pfn, zone_end_pfn);			// 코드 4-34
 
 	/*
 	 * ZONE_MOVABLE handling.
 	 * Treat pages to be ZONE_MOVABLE in ZONE_NORMAL as absent pages
 	 * and vice versa.
 	 */
-	if (zone_movable_pfn[nid]) {
-		if (mirrored_kernelcore) {
+	if (zone_movable_pfn[nid]) {													// movable zone 일 경우,
+		if (mirrored_kernelcore) {													// TODO) mirrored_kernelcore 확인 필요
 			unsigned long start_pfn, end_pfn;
 			struct memblock_region *r;
 
@@ -5276,12 +5320,12 @@ static unsigned long __meminit zone_absent_pages_in_node(int nid,
 					nr_absent += end_pfn - start_pfn;
 			}
 		} else {
-			if (zone_type == ZONE_NORMAL)
+			if (zone_type == ZONE_NORMAL)											// Zone Normal Case
 				nr_absent += node_end_pfn - zone_movable_pfn[nid];
 		}
 	}
 
-	return nr_absent;
+	return nr_absent;																// hole 개수 리턴
 }
 
 #else /* CONFIG_HAVE_MEMBLOCK_NODE_MAP */
@@ -5325,6 +5369,7 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 						unsigned long *zholes_size)
 {
 	/**
+	 * @details totalpage 개수를 구한다.
 	 * @param[out] pgdat pgdat 구조체
 	 * @param[in] node_start_pfn start page frame number
 	 * @param[in] node_end_pfn end page frame number
@@ -5345,7 +5390,7 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 						  &zone_start_pfn,
 						  &zone_end_pfn,
 						  zones_size);
-		real_size = size - zone_absent_pages_in_node(pgdat->node_id, i,					// 코드 4-33
+		real_size = size - zone_absent_pages_in_node(pgdat->node_id, i,					// 요청 존에서 hole 페이지를 제한 실제 사용 가능한 페이지 수를 계산한다.
 						  node_start_pfn, node_end_pfn,
 						  zholes_size);
 		if (size)
@@ -5365,6 +5410,7 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 							realtotalpages);
 }
 
+#undef CONFIG_SPARSEMEM													// 임시 추가
 #ifndef CONFIG_SPARSEMEM
 /*
  * Calculate the size of the zone->blockflags rounded to an unsigned long
@@ -5375,6 +5421,11 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
  */
 static unsigned long __init usemap_size(unsigned long zone_start_pfn, unsigned long zonesize)
 {
+	/**
+	 * @details zone size를 바이트로 전달
+	 * @param[in] zone_start_pfn zone start page frame number
+	 * @param[in] zonesize zone size
+	 */
 	unsigned long usemapsize;
 
 	zonesize += zone_start_pfn & (pageblock_nr_pages-1);
@@ -5383,7 +5434,7 @@ static unsigned long __init usemap_size(unsigned long zone_start_pfn, unsigned l
 	usemapsize *= NR_PAGEBLOCK_BITS;
 	usemapsize = roundup(usemapsize, 8 * sizeof(unsigned long));
 
-	return usemapsize / 8;
+	return usemapsize / 8;														// 바이트 값으로 사이즈 전달
 }
 
 static void __init setup_usemap(struct pglist_data *pgdat,
@@ -5391,17 +5442,25 @@ static void __init setup_usemap(struct pglist_data *pgdat,
 				unsigned long zone_start_pfn,
 				unsigned long zonesize)
 {
-	unsigned long usemapsize = usemap_size(zone_start_pfn, zonesize);
+	/**
+	 * @details 입력받은 zonesize, zone_start_pfn 에 맞춰 pageblock_flags에 memblock 할당
+	 * @param[out] pgdat page data
+	 * @param[out] zone zone
+	 * @param[in] zone_start_pfn zone start page frame number
+	 * @param[in] zonesize zone size
+	 */
+	unsigned long usemapsize = usemap_size(zone_start_pfn, zonesize);			// map size 계산
 	zone->pageblock_flags = NULL;
 	if (usemapsize)
 		zone->pageblock_flags =
-			memblock_virt_alloc_node_nopanic(usemapsize,
+			memblock_virt_alloc_node_nopanic(usemapsize,						// pageblock_flags에 memblock 할당
 							 pgdat->node_id);
 }
 #else
 static inline void setup_usemap(struct pglist_data *pgdat, struct zone *zone,
 				unsigned long zone_start_pfn, unsigned long zonesize) {}
 #endif /* CONFIG_SPARSEMEM */
+#define CONFIG_SPARSEMEM												// 임시 추가
 
 #define CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
 #ifdef CONFIG_HUGETLB_PAGE_SIZE_VARIABLE
@@ -5471,43 +5530,47 @@ static unsigned long __paginginit calc_memmap_size(unsigned long spanned_pages,
  */
 static void __paginginit free_area_init_core(struct pglist_data *pgdat)
 {
+	/**
+	 * @details free_area, lruvec, pcp등, 값을 초기화
+	 * @param[out] pgdat page data
+	 */
 	enum zone_type j;
 	int nid = pgdat->node_id;
 	int ret;
 
-	pgdat_resize_init(pgdat);
+	pgdat_resize_init(pgdat);													// spinlock initialize										
 #ifdef CONFIG_NUMA_BALANCING
-	spin_lock_init(&pgdat->numabalancing_migrate_lock);
+	spin_lock_init(&pgdat->numabalancing_migrate_lock);							// balancing spin lock initialize
 	pgdat->numabalancing_migrate_nr_pages = 0;
 	pgdat->numabalancing_migrate_next_window = jiffies;
 #endif
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE												// Huge page case
 	spin_lock_init(&pgdat->split_queue_lock);
 	INIT_LIST_HEAD(&pgdat->split_queue);
 	pgdat->split_queue_len = 0;
 #endif
-	init_waitqueue_head(&pgdat->kswapd_wait);
-	init_waitqueue_head(&pgdat->pfmemalloc_wait);
+	init_waitqueue_head(&pgdat->kswapd_wait);									// kswapd_wait queue initialize
+	init_waitqueue_head(&pgdat->pfmemalloc_wait);								// pfmemalloc_wait initialize
 #ifdef CONFIG_COMPACTION
 	init_waitqueue_head(&pgdat->kcompactd_wait);
 #endif
-	pgdat_page_ext_init(pgdat);
+	pgdat_page_ext_init(pgdat);													// page_ext initialize
 
-	for (j = 0; j < MAX_NR_ZONES; j++) {
-		struct zone *zone = pgdat->node_zones + j;
+	for (j = 0; j < MAX_NR_ZONES; j++) {										// 존별로 코드 동작
+		struct zone *zone = pgdat->node_zones + j;								// *zone = &pgdat->node_zones[j]
 		unsigned long size, realsize, freesize, memmap_pages;
 		unsigned long zone_start_pfn = zone->zone_start_pfn;
 
-		size = zone->spanned_pages;
-		realsize = freesize = zone->present_pages;
+		size = zone->spanned_pages;												// 코드 4-30 calculate_node_totalpages 에서 계산한 zone 의 page 개수
+		realsize = freesize = zone->present_pages;								// 코드 4-30 calculate_node_totalpages 에서 계산한 실제 사용하는 page 개수
 
 		/*
 		 * Adjust freesize so that it accounts for how much memory
 		 * is used by this zone for memmap. This affects the watermark
 		 * and per-cpu initialisations
 		 */
-		memmap_pages = calc_memmap_size(size, realsize);
-		if (!is_highmem_idx(j)) {
+		memmap_pages = calc_memmap_size(size, realsize);						// page 구조체 배열이 들어간 페이지 수를 구한다.
+		if (!is_highmem_idx(j)) {												// freesize 계산
 			if (freesize >= memmap_pages) {
 				freesize -= memmap_pages;
 				if (memmap_pages)
@@ -5520,55 +5583,59 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat)
 		}
 
 		/* Account for reserved pages */
-		if (j == 0 && freesize > dma_reserve) {
+		if (j == 0 && freesize > dma_reserve) {									// freesize 계산
 			freesize -= dma_reserve;
 			printk(KERN_DEBUG "  %s zone: %lu pages reserved\n",
 					zone_names[0], dma_reserve);
 		}
-
+		// ... 4-37
 		if (!is_highmem_idx(j))
-			nr_kernel_pages += freesize;
+			nr_kernel_pages += freesize;										// nr_kernel_pages 정적 변수에 위에서 계산한 free_size 값 추가
 		/* Charge for highmem memmap if there are enough kernel pages */
-		else if (nr_kernel_pages > memmap_pages * 2)
+		else if (nr_kernel_pages > memmap_pages * 2)							// Highmem (arm64는 사용하지 않음)
 			nr_kernel_pages -= memmap_pages;
-		nr_all_pages += freesize;
+		nr_all_pages += freesize;												// nr_all_pages 정적 변수에 위에서 계산한 free_size 값 추가
 
 		/*
 		 * Set an approximate value for lowmem here, it will be adjusted
 		 * when the bootmem allocator frees pages into the buddy system.
 		 * And all highmem pages will be managed by the buddy system.
 		 */
-		zone->managed_pages = is_highmem_idx(j) ? realsize : freesize;
+		zone->managed_pages = is_highmem_idx(j) ? realsize : freesize;			// arm64 기준 zone->managed_pages = freesize
 #ifdef CONFIG_NUMA
 		zone->node = nid;
-		zone->min_unmapped_pages = (freesize*sysctl_min_unmapped_ratio)
+		zone->min_unmapped_pages = (freesize*sysctl_min_unmapped_ratio)			// 캐싱을 너무 자주하지 않게 하기 위해 최소 페이징 정의
 						/ 100;
-		zone->min_slab_pages = (freesize * sysctl_min_slab_ratio) / 100;
+		zone->min_slab_pages = (freesize * sysctl_min_slab_ratio) / 100;		// 캐싱을 너무 자주하지 않게 하기 위해 최소 페이징 정의
 #endif
 		zone->name = zone_names[j];
 		spin_lock_init(&zone->lock);
 		spin_lock_init(&zone->lru_lock);
 		zone_seqlock_init(zone);
 		zone->zone_pgdat = pgdat;
-		zone_pcp_init(zone);
+		zone_pcp_init(zone);													// initialize 있지만 현재는 사용하지 못함
 
 		/* For bootup, initialized properly in watermark setup */
-		mod_zone_page_state(zone, NR_ALLOC_BATCH, zone->managed_pages);
+		mod_zone_page_state(zone, NR_ALLOC_BATCH, zone->managed_pages);			// zone 정보에 값을 atomic으로 업데이트 (매크로 확인)
 
-		lruvec_init(&zone->lruvec);
+		lruvec_init(&zone->lruvec);												// least recently used 초기화
 		if (!size)
 			continue;
 
-		set_pageblock_order();
-		setup_usemap(pgdat, zone, zone_start_pfn, size);
-		ret = init_currently_empty_zone(zone, zone_start_pfn, size);
+		set_pageblock_order();													// page table 사이즈만큼 bit order 저장
+		setup_usemap(pgdat, zone, zone_start_pfn, size);						// 입력받은 zonesize, zone_start_pfn 에 맞춰 pageblock_flags에 memblock 할당
+		ret = init_currently_empty_zone(zone, zone_start_pfn, size);			// 현재 zone Initialize 진행
 		BUG_ON(ret);
-		memmap_init(size, nid, j, zone_start_pfn);
+		memmap_init(size, nid, j, zone_start_pfn);								// TODO) 4-42
 	}
 }
 
 static void __init_refok alloc_node_mem_map(struct pglist_data *pgdat)
 {
+	/**
+	 * @details 노드별 flat한 mem_map을 구성하기 위해 memblock 할당 진행
+	 * @param[out] pgdat page list
+	 */
 	unsigned long __maybe_unused start = 0;
 	unsigned long __maybe_unused offset = 0;
 
@@ -5580,7 +5647,7 @@ static void __init_refok alloc_node_mem_map(struct pglist_data *pgdat)
 	start = pgdat->node_start_pfn & ~(MAX_ORDER_NR_PAGES - 1);
 	offset = pgdat->node_start_pfn - start;
 	/* ia64 gets its own node_mem_map, before this, without bootmem */
-	if (!pgdat->node_mem_map) {
+	if (!pgdat->node_mem_map) {													// mem_map이 할당되지 않은 경우
 		unsigned long size, end;
 		struct page *map;
 
@@ -5592,17 +5659,17 @@ static void __init_refok alloc_node_mem_map(struct pglist_data *pgdat)
 		end = pgdat_end_pfn(pgdat);
 		end = ALIGN(end, MAX_ORDER_NR_PAGES);
 		size =  (end - start) * sizeof(struct page);
-		map = alloc_remap(pgdat->node_id, size);
-		if (!map)
-			map = memblock_virt_alloc_node_nopanic(size,
+		map = alloc_remap(pgdat->node_id, size);								// tile architecture인 경우에만 사용
+		if (!map)																// 그 외
+			map = memblock_virt_alloc_node_nopanic(size,						// mem_map 크기만큼 memblock 할당
 							       pgdat->node_id);
-		pgdat->node_mem_map = map + offset;
+		pgdat->node_mem_map = map + offset;										// offset 추가
 	}
 #ifndef CONFIG_NEED_MULTIPLE_NODES
 	/*
 	 * With no DISCONTIG, the global mem_map is just set as node 0's
 	 */
-	if (pgdat == NODE_DATA(0)) {
+	if (pgdat == NODE_DATA(0)) {												// 멀티 노드가 없는 경우 첫번째 노드 값 초기화	
 		mem_map = NODE_DATA(0)->node_mem_map;
 #if defined(CONFIG_HAVE_MEMBLOCK_NODE_MAP) || defined(CONFIG_FLATMEM)
 		if (page_to_pfn(mem_map) != pgdat->node_start_pfn)
@@ -5641,10 +5708,10 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 #else
 	start_pfn = node_start_pfn;
 #endif
-	calculate_node_totalpages(pgdat, start_pfn, end_pfn,						// 코드 4-30
+	calculate_node_totalpages(pgdat, start_pfn, end_pfn,						// totalpage 개수를 구한다.
 				  zones_size, zholes_size);
 
-	alloc_node_mem_map(pgdat);													// 코드 4-35
+	alloc_node_mem_map(pgdat);													// 노드별 flat한 mem_map을 구성하기 위해 memblock 할당 진행
 #ifdef CONFIG_FLAT_NODE_MEM_MAP
 	printk(KERN_DEBUG "free_area_init_node: node %d, pgdat %08lx, node_mem_map %08lx\n",
 		nid, (unsigned long)pgdat,
