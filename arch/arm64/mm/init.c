@@ -315,7 +315,7 @@ static void __init free_unused_memmap(void)
 	struct memblock_region *reg;
 
 	for_each_memblock(memory, reg) {
-		start = __phys_to_pfn(reg->base);
+		start = __phys_to_pfn(reg->base); // region 의 시작주소를 가져옴
 
 #ifdef CONFIG_SPARSEMEM
 		/*
@@ -328,8 +328,11 @@ static void __init free_unused_memmap(void)
 		 * If we had a previous bank, and there is a space between the
 		 * current bank and the previous, free it.
 		 */
-		if (prev_end && prev_end < start)
+		if (prev_end && prev_end < start) // 이전의 end ~ start 만큼 memmap 에서 제거
 			free_memmap(prev_end, start);
+
+		// ----------(region)----------(region)-----------------------------------------
+		// <-delete->--------<-delete->--------|-SPARSEMEM 을 사용하는 경우 여기까지 지움-|
 
 		/*
 		 * Align up here since the VM subsystem insists that the
@@ -354,12 +357,20 @@ static void __init free_unused_memmap(void)
  */
 void __init mem_init(void)
 {
-	swiotlb_init(1);
+	swiotlb_init(1); // I/O 용 TLB 버퍼 메모리를 할당한다.
 
-	set_max_mapnr(pfn_to_page(max_pfn) - mem_map);
+	set_max_mapnr(pfn_to_page(max_pfn) - mem_map); // 싱글 노드인 경우, mem_map[] 배열에 대한 인덱스 번호를 저장한다.
 
+	// sparsemem_vmemmap 을 사용하는 경우에는
+	// memmap = page[];
+	// memmap 의 배열 자체가 vmemmap 에 들어가기 때문에 지울 필요가 없다.
+	// 그렇지 않은 경우에는
+	// 여기저기 퍼져서 저장되어 있는 page 구조체 정보가, 사실은 사용하지 않는 페이지 정보를 갖고 있는데, 이걸 지운다.
+	// 섹션단위로 크게 만들었기 때문에, 이를 해제할 필요가 있음.
 #ifndef CONFIG_SPARSEMEM_VMEMMAP
-	free_unused_memmap();
+
+	free_unused_memmap(); // SPARSEMEM_VMEMMAP 을 사용하지 않는 경우에,
+	                      // reserved memblock 에서 사용하지 않는 페이지를 free 시킨다
 #endif
 	/* this will put all unused low memory onto the freelists */
 	free_all_bootmem();

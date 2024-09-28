@@ -311,19 +311,19 @@ static inline bool update_defer_init(pg_data_t *pgdat,
 	unsigned long max_initialise;
 
 	/* Always populate low zones for address-contrained allocations */
-	if (zone_end < pgdat_end_pfn(pgdat))
+	if (zone_end < pgdat_end_pfn(pgdat)) // ZONE_DMA 나 ZONE_NORMAL 의 일부 같은 저영역은 지연처리하지 않는다.
 		return true;
 	/*
 	 * Initialise at least 2G of a node but also take into account that
 	 * two large system hashes that can take up 1GB for 0.25TB/node.
 	 */
 	max_initialise = max(2UL << (30 - PAGE_SHIFT),
-		(pgdat->node_spanned_pages >> 8));
+		(pgdat->node_spanned_pages >> 8)); // max 값을 넘어선 후부터, memmap 초기화를 미루겠다.
 
 	(*nr_initialised)++;
 	if ((*nr_initialised > max_initialise) &&
-	    (pfn & (PAGES_PER_SECTION - 1)) == 0) {
-		pgdat->first_deferred_pfn = pfn;
+	    (pfn & (PAGES_PER_SECTION - 1)) == 0) { // 섹션단위로 memmap 초기화를 지연 
+		pgdat->first_deferred_pfn = pfn;        // node 에 특정 pfn 이후부터는 지연처리 할것이다라고 설정
 		return false;
 	}
 
@@ -949,18 +949,20 @@ out:
 	return ret;
 }
 
-static void __meminit __init_single_page(struct page *page, unsigned long pfn,
+static void __meminit __init_single_page(struct page *page, unsigned long pfn, // include/linux/mm_types.h struct page
 				unsigned long zone, int nid)
 {
-	set_page_links(page, zone, nid, pfn);
-	init_page_count(page);
-	page_mapcount_reset(page);
-	page_cpupid_reset_last(page);
+	set_page_links(page, zone, nid, pfn); // page 에 zone, node 정보를 설정
+	init_page_count(page);                // 실제로 참조되고있는 refcount 를 리셋
+	page_mapcount_reset(page);            // 가상 테이블상에 (pgd, pud ..) 매핑이 되어있는 수 리셋
+	page_cpupid_reset_last(page);         // 마지막에 사용한 cpu pid 를 리셋
 
 	INIT_LIST_HEAD(&page->lru);
 #ifdef WANT_PAGE_VIRTUAL
 	/* The shift won't overflow because ZONE_NORMAL is below 4G. */
 	if (!is_highmem_idx(zone))
+		// 존이 highmem 이 아닌 경우, page->virtual 에 pfn 을 가상주소 변경한 값을 설정
+		// 정확히 뭔지는 ..
 		set_page_address(page, __va(pfn << PAGE_SHIFT));
 #endif
 }
@@ -1079,22 +1081,22 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 static void __init __free_pages_boot_core(struct page *page,
 					unsigned long pfn, unsigned int order)
 {
-	unsigned int nr_pages = 1 << order;
+	unsigned int nr_pages = 1 << order; // 2^order 만큼 페이지를 구함
 	struct page *p = page;
 	unsigned int loop;
 
-	prefetchw(p);
+	prefetchw(p); // 캐시라인에 page를 미리 올려둔다. page->_count 에 히트할 확률을 높이기 위해서
 	for (loop = 0; loop < (nr_pages - 1); loop++, p++) {
 		prefetchw(p + 1);
-		__ClearPageReserved(p);
-		set_page_count(p, 0);
+		__ClearPageReserved(p); // page 에 reserved 를 clear
+		set_page_count(p, 0);   // ref count 를 0
 	}
 	__ClearPageReserved(p);
 	set_page_count(p, 0);
 
-	page_zone(page)->managed_pages += nr_pages;
-	set_page_refcounted(page);
-	__free_pages(page, order);
+	page_zone(page)->managed_pages += nr_pages; // zone 에서 사용할수 있는 free 된 페이지 수를 추가
+	set_page_refcounted(page);                  // free 를 하기전 refcount 를 1로 만들어줌
+	__free_pages(page, order);                  // page 를 free (버디 시스템에 돌려준다)
 }
 
 #if defined(CONFIG_HAVE_ARCH_EARLY_PFN_TO_NID) || \
@@ -1152,7 +1154,7 @@ static inline bool __meminit meminit_pfn_in_nid(unsigned long pfn, int node,
 void __init __free_pages_bootmem(struct page *page, unsigned long pfn,
 							unsigned int order)
 {
-	if (early_page_uninitialised(pfn))
+	if (early_page_uninitialised(pfn)) // 지연 해서 초기화 하기로 했던 page 로 free 하지 않음
 		return;
 	return __free_pages_boot_core(page, pfn, order);
 }
@@ -2352,7 +2354,7 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 {
 	unsigned long flags;
 	struct page *page;
-	bool cold = ((gfp_flags & __GFP_COLD) != 0);
+	bool cold = ((gfp_flags & __GFP_COLD) != 0); // 콜드 페이지를 원하는 경우 flag 지정
 
 	if (likely(order == 0)) {
 		struct per_cpu_pages *pcp;
@@ -2381,34 +2383,38 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 		 * We most definitely don't want callers attempting to
 		 * allocate greater than order-1 page units with __GFP_NOFAIL.
 		 */
-		WARN_ON_ONCE((gfp_flags & __GFP_NOFAIL) && (order > 1));
-		spin_lock_irqsave(&zone->lock, flags);
+		// flag 가 NOFAIL 인 경우 2개를 초과하는 페이지 할다 요청시 경고
+		WARN_ON_ONCE((gfp_flags & __GFP_NOFAIL) && (order > 1)); 
+		spin_lock_irqsave(&zone->lock, flags); // 인터럽트를 비활성화하고 락을 잡는다. 인터럽트 상태를 flags 저장해둠
 
 		page = NULL;
-		if (alloc_flags & ALLOC_HARDER) {
-			page = __rmqueue_smallest(zone, order, MIGRATE_HIGHATOMIC);
+		if (alloc_flags & ALLOC_HARDER) { // 메모리가 없는 비상상황일때 ALLOC_HARDR 플래그로 페이지 할당을 요청
+			page = __rmqueue_smallest(zone, order, MIGRATE_HIGHATOMIC); // 비상 상황에서는 HIGH_ATOMIC MIGRATE 타입을 사용
 			if (page)
-				trace_mm_page_alloc_zone_locked(page, order, migratetype);
+			    // events-kmem.txt
+			    // mm_page_alloc_zone_locked page=%p pfn=%lu order=%u migratetype=%d cpu=%d percpu_refill=%d
+				trace_mm_page_alloc_zone_locked(page, order, migratetype); // 비상상황같은 상황에서 트레이싱으로 로그 출력?
 		}
 		if (!page)
-			page = __rmqueue(zone, order, migratetype);
-		spin_unlock(&zone->lock);
+			page = __rmqueue(zone, order, migratetype); // 버디시스템에서 페이지 할당 받음
+
+		spin_unlock(&zone->lock); // 락 해제
 		if (!page)
 			goto failed;
-		__mod_zone_freepage_state(zone, -(1 << order),
-					  get_pcppage_migratetype(page));
+		__mod_zone_freepage_state(zone, -(1 << order), // NR_FREE_PAGES, NR_FREE_CMA_PAGES 같은 값들의 변화를
+					  get_pcppage_migratetype(page));  // zone 의 stat 에 기록
 	}
 
-	__mod_zone_page_state(zone, NR_ALLOC_BATCH, -(1 << order));
-	if (atomic_long_read(&zone->vm_stat[NR_ALLOC_BATCH]) <= 0 &&
+	__mod_zone_page_state(zone, NR_ALLOC_BATCH, -(1 << order)); // zone 의 stat 기록
+	if (atomic_long_read(&zone->vm_stat[NR_ALLOC_BATCH]) <= 0 && // 더이상 할당할 수 없게 zone 이 고갈된 경우에, 플래그를 설정
 	    !test_bit(ZONE_FAIR_DEPLETED, &zone->flags))
 		set_bit(ZONE_FAIR_DEPLETED, &zone->flags);
 
-	__count_zone_vm_events(PGALLOC, zone, 1 << order);
-	zone_statistics(preferred_zone, zone, gfp_flags);
-	local_irq_restore(flags);
+	__count_zone_vm_events(PGALLOC, zone, 1 << order); // PGALLOC 을 zone stat 에 기록
+	zone_statistics(preferred_zone, zone, gfp_flags);  // 통계용 카운트를 설정
+	local_irq_restore(flags); // 저장해놨던 인터럽트 상태로 복원
 
-	VM_BUG_ON_PAGE(bad_range(zone, page), page);
+	VM_BUG_ON_PAGE(bad_range(zone, page), page); // page 가 zone 의 영역안에 들어있는지, 그리고 페이지의 zone 이 일치하는지 확인
 	return page;
 
 failed:
@@ -4705,7 +4711,8 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		 * ZONE_MOVABLE not ZONE_NORMAL. skip it.
 		 */
 		if (!mirrored_kernelcore && zone_movable_pfn[nid])
-			if (zone == ZONE_NORMAL && pfn >= zone_movable_pfn[nid])
+			if (zone == ZONE_NORMAL && pfn >= zone_movable_pfn[nid]) // 노드별로 movable 영역의 주소가 정해져 있음.
+																	 // movable 영역에 normal zone 이 온 경우 스킵
 				continue;
 
 		/*
@@ -4714,16 +4721,18 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		 * mirrored, it's an overlapped memmap init. skip it.
 		 */
 		if (mirrored_kernelcore && zone == ZONE_MOVABLE) {
-			if (!r || pfn >= memblock_region_memory_end_pfn(r)) {
+			if (!r || pfn >= memblock_region_memory_end_pfn(r)) {    // 내 pfn 이 속해있는 memblock 을 찾기
 				for_each_memblock(memory, tmp)
 					if (pfn < memblock_region_memory_end_pfn(tmp))
 						break;
 				r = tmp;
 			}
-			if (pfn >= memblock_region_memory_base_pfn(r) &&
+			
+			if (pfn >= memblock_region_memory_base_pfn(r) &&    // base <= pfn <= end
 			    memblock_is_mirror(r)) {
 				/* already initialized as NORMAL */
-				pfn = memblock_region_memory_end_pfn(r);
+				pfn = memblock_region_memory_end_pfn(r);        // memblock 을 발견한 경우에, 넘어간다.
+				                                                // memblock 에 끝에 해당하는 pfn 으로 설정해서 루프를 스킵
 				continue;
 			}
 		}
@@ -4742,13 +4751,14 @@ not_early:
 		 * check here not to call set_pageblock_migratetype() against
 		 * pfn out of zone.
 		 */
-		if (!(pfn & (pageblock_nr_pages - 1))) {
+		if (!(pfn & (pageblock_nr_pages - 1))) { // 페이블록에서 첫 페이지인 경우
 			struct page *page = pfn_to_page(pfn);
 
 			__init_single_page(page, pfn, zone, nid);
-			set_pageblock_migratetype(page, MIGRATE_MOVABLE);
+			set_pageblock_migratetype(page, MIGRATE_MOVABLE); // MIGRATE 타입을 지정해준다.
 		} else {
 			__init_single_pfn(pfn, zone, nid);
+			// return __init_single_page(pfn_to_page(pfn), pfn, zone, nid);
 		}
 	}
 }

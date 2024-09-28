@@ -102,7 +102,7 @@ static void __init __free_pages_memory(unsigned long start, unsigned long end)
 		while (start + (1UL << order) > end)
 			order--;
 
-		__free_pages_bootmem(pfn_to_page(start), start, order);
+		__free_pages_bootmem(pfn_to_page(start), start, order); // start ~ end 사이의 페이지를 order 값을 크게만들면서 free_pages_bootmem 에 전달
 
 		start += (1UL << order);
 	}
@@ -111,6 +111,7 @@ static void __init __free_pages_memory(unsigned long start, unsigned long end)
 static unsigned long __init __free_memory_core(phys_addr_t start,
 				 phys_addr_t end)
 {
+	// 물리 주소를 받아와서 pfn 으로 변경
 	unsigned long start_pfn = PFN_UP(start);
 	unsigned long end_pfn = min_t(unsigned long,
 				      PFN_DOWN(end), max_low_pfn);
@@ -118,9 +119,9 @@ static unsigned long __init __free_memory_core(phys_addr_t start,
 	if (start_pfn > end_pfn)
 		return 0;
 
-	__free_pages_memory(start_pfn, end_pfn);
+	__free_pages_memory(start_pfn, end_pfn); // start ~ end 페이지를 free
 
-	return end_pfn - start_pfn;
+	return end_pfn - start_pfn; // free 한 페이지 수를 반환
 }
 
 static unsigned long __init free_low_memory_core_early(void)
@@ -129,26 +130,27 @@ static unsigned long __init free_low_memory_core_early(void)
 	phys_addr_t start, end;
 	u64 i;
 
-	memblock_clear_hotplug(0, -1);
+	memblock_clear_hotplug(0, -1); // 모든 memory.regions 에 hotplug 플래그를 제거
 
 	for_each_reserved_mem_region(i, &start, &end)
-		reserve_bootmem_region(start, end);
+		reserve_bootmem_region(start, end); // reserved memblock 안에 있는 페이지들에, reserved 플래그를 체크해둠. (버디로 옮겨가기 전)
 
 	for_each_free_mem_range(i, NUMA_NO_NODE, MEMBLOCK_NONE, &start, &end,
-				NULL)
-		count += __free_memory_core(start, end);
+				NULL) // memory 에 있으면서 reserved 가 아닌 영역의 region 만 순회
+		count += __free_memory_core(start, end); // 해제
 
 #ifdef CONFIG_ARCH_DISCARD_MEMBLOCK
 	{
 		phys_addr_t size;
+		// 이 시점부터 memblock 을 쓰지 않겠다는 config -> CONFIG_ARCH_DISCARD_MEMBLOCK
 
 		/* Free memblock.reserved array if it was allocated */
-		size = get_allocated_memblock_reserved_regions_info(&start);
+		size = get_allocated_memblock_reserved_regions_info(&start); // memblock.reserved.regions 의 start, end 를 가져와서 free
 		if (size)
 			count += __free_memory_core(start, start + size);
 
 		/* Free memblock.memory array if it was allocated */
-		size = get_allocated_memblock_memory_regions_info(&start);
+		size = get_allocated_memblock_memory_regions_info(&start);  // memblock.memory.regions 의 start, end 를 가져와서 free
 		if (size)
 			count += __free_memory_core(start, start + size);
 	}
@@ -189,15 +191,16 @@ unsigned long __init free_all_bootmem(void)
 {
 	unsigned long pages;
 
-	reset_all_zones_managed_pages();
+	reset_all_zones_managed_pages(); // 모든 노드의 존에 managed_pages 를 0으로 초기화
 
 	/*
 	 * We need to use NUMA_NO_NODE instead of NODE_DATA(0)->node_id
 	 *  because in some case like Node0 doesn't have RAM installed
 	 *  low ram will be on Node1
 	 */
-	pages = free_low_memory_core_early();
-	totalram_pages += pages;
+	pages = free_low_memory_core_early(); // low mem 영역을 buddy system 의 free_list 로 옮기고
+	                                      // memory & reserved memblock 관리 배열도 사용하지않는 경우 이관
+	totalram_pages += pages;              // 옮겨진 페이지 수를 더한다.
 
 	return pages;
 }
