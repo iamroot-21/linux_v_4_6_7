@@ -126,9 +126,9 @@ static inline int page_ref_sub_and_test(struct page *page, int nr)
 
 static inline int page_ref_dec_and_test(struct page *page)
 {
-	int ret = atomic_dec_and_test(&page->_count);
+	int ret = atomic_dec_and_test(&page->_count);												// atomic으로 page ref 카운트 감소
 
-	if (page_ref_tracepoint_active(__tracepoint_page_ref_mod_and_test))
+	if (page_ref_tracepoint_active(__tracepoint_page_ref_mod_and_test))							// 디버깅용
 		__page_ref_mod_and_test(page, -1, ret);
 	return ret;
 }
