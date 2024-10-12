@@ -625,7 +625,7 @@ void on_each_cpu_mask(const struct cpumask *mask, smp_call_func_t func,
 	int cpu = get_cpu();
 
 	smp_call_function_many(mask, func, info, wait);
-	if (cpumask_test_cpu(cpu, mask)) {
+	if (cpumask_test_cpu(cpu, mask)) { // validation check
 		unsigned long flags;
 		local_irq_save(flags);
 		func(info);

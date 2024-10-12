@@ -745,16 +745,16 @@ continue_merging:
 		 * We don't want to hit this code for the more frequent
 		 * low-order merging.
 		 */
-		if (unlikely(has_isolate_pageblock(zone))) {
+		if (unlikely(has_isolate_pageblock(zone))) {											// isolate zone이 있는 경우 block merge 진행
 			int buddy_mt;
 
-			buddy_idx = __find_buddy_index(page_idx, order);
-			buddy = page + (buddy_idx - page_idx);
+			buddy_idx = __find_buddy_index(page_idx, order);									// buddy index를 가져옴
+			buddy = page + (buddy_idx - page_idx);											 	// index merge, 해당 buddy의 page 포인터를 계산
 			buddy_mt = get_pageblock_migratetype(buddy);
 
-			if (migratetype != buddy_mt
-					&& (is_migrate_isolate(migratetype) ||
-						is_migrate_isolate(buddy_mt)))
+			if (migratetype != buddy_mt															// 설정할 migrate type이 buddy mt와 다른 경우
+					&& (is_migrate_isolate(migratetype) ||										// migrate type이 isolate가 아닌 경우
+						is_migrate_isolate(buddy_mt)))											// buddy migrate type 이 isolate가 아닌 경우
 				goto done_merging;
 		}
 		max_order++;
@@ -762,7 +762,7 @@ continue_merging:
 	}
 
 done_merging:
-	set_page_order(page, order);
+	set_page_order(page, order);																// page 설정
 
 	/*
 	 * If this is not the largest possible page, check if the buddy
@@ -774,20 +774,20 @@ done_merging:
 	 */
 	if ((order < MAX_ORDER-2) && pfn_valid_within(page_to_pfn(buddy))) {
 		struct page *higher_page, *higher_buddy;
-		combined_idx = buddy_idx & page_idx;
-		higher_page = page + (combined_idx - page_idx);
-		buddy_idx = __find_buddy_index(combined_idx, order + 1);
-		higher_buddy = higher_page + (buddy_idx - combined_idx);
-		if (page_is_buddy(higher_page, higher_buddy, order + 1)) {
-			list_add_tail(&page->lru,
+		combined_idx = buddy_idx & page_idx;													// merge 시, index 계산
+		higher_page = page + (combined_idx - page_idx);											// merge page 포인터 계산
+		buddy_idx = __find_buddy_index(combined_idx, order + 1);								// buddy index 계산
+		higher_buddy = higher_page + (buddy_idx - combined_idx);								// buddy page 포인터 계산
+		if (page_is_buddy(higher_page, higher_buddy, order + 1)) {								// merge page가 buddy인 경우
+			list_add_tail(&page->lru,															// list의 끝부분에 추가 (cold)
 				&zone->free_area[order].free_list[migratetype]);
 			goto out;
 		}
 	}
 
-	list_add(&page->lru, &zone->free_area[order].free_list[migratetype]);
+	list_add(&page->lru, &zone->free_area[order].free_list[migratetype]);						// list Head에 추가 (hot)
 out:
-	zone->free_area[order].nr_free++;
+	zone->free_area[order].nr_free++;															// nr_free 값 업데이트
 }
 
 static inline int free_pages_check(struct page *page)
@@ -833,15 +833,18 @@ static inline int free_pages_check(struct page *page)
 static void free_pcppages_bulk(struct zone *zone, int count,
 					struct per_cpu_pages *pcp)
 {
+	/**
+	 * @brief pcp->list에서 count만큼 buddy system에 반환
+	 */
 	int migratetype = 0;
 	int batch_free = 0;
 	int to_free = count;
 	unsigned long nr_scanned;
 
 	spin_lock(&zone->lock);
-	nr_scanned = zone_page_state(zone, NR_PAGES_SCANNED);
-	if (nr_scanned)
-		__mod_zone_page_state(zone, NR_PAGES_SCANNED, -nr_scanned);
+	nr_scanned = zone_page_state(zone, NR_PAGES_SCANNED); // SCANNED 체크
+	if (nr_scanned) // scanned count 값이 0이 아닐 경우
+		__mod_zone_page_state(zone, NR_PAGES_SCANNED, -nr_scanned); // scanned count를 0으로 초기화
 
 	while (to_free) {
 		struct page *page;
@@ -855,32 +858,39 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 		 * lists
 		 */
 		do {
-			batch_free++;
+			/**
+			 * batch free
+        	 * count 16
+        	 * 0 [3]    1 1 1 x x
+        	 * 1 [5]  1 1 1 1 2 x (2개는 실제로 남은건 1개라서 1만빠짐) 
+        	 * 2 [12] 1 1 1 1 1 3 (두 리스트가 이미 비어있을때)
+			 */
+			batch_free++; // 해당 리스트에서 제거할 page 개수
 			if (++migratetype == MIGRATE_PCPTYPES)
 				migratetype = 0;
-			list = &pcp->lists[migratetype];
+			list = &pcp->lists[migratetype]; // list 포인터 업데이트
 		} while (list_empty(list));
 
 		/* This is the only non-empty list. Free them all. */
-		if (batch_free == MIGRATE_PCPTYPES)
+		if (batch_free == MIGRATE_PCPTYPES) // list가 1개만 남아있는 경우
 			batch_free = to_free;
 
 		do {
 			int mt;	/* migratetype of the to-be-freed page */
 
-			page = list_last_entry(list, struct page, lru);
+			page = list_last_entry(list, struct page, lru); // list의 마지막 entry를 page 포인터로 등록
 			/* must delete as __free_one_page list manipulates */
-			list_del(&page->lru);
+			list_del(&page->lru); // page->lru 리스트 제거
 
-			mt = get_pcppage_migratetype(page);
+			mt = get_pcppage_migratetype(page); // page의 migrate type을 가져옴
 			/* MIGRATE_ISOLATE page should not go to pcplists */
-			VM_BUG_ON_PAGE(is_migrate_isolate(mt), page);
+			VM_BUG_ON_PAGE(is_migrate_isolate(mt), page); // 디버깅 코드
 			/* Pageblock could have been isolated meanwhile */
-			if (unlikely(has_isolate_pageblock(zone)))
-				mt = get_pageblock_migratetype(page);
+			if (unlikely(has_isolate_pageblock(zone))) // zone이 isolate type을 가지고 있는 경우
+				mt = get_pageblock_migratetype(page); // page block 의 migrate type을 가져옴
 
-			__free_one_page(page, page_to_pfn(page), zone, 0, mt);
-			trace_mm_page_pcpu_drain(page, 0, mt);
+			__free_one_page(page, page_to_pfn(page), zone, 0, mt); // page 반환
+			trace_mm_page_pcpu_drain(page, 0, mt); // 디버깅 코드
 		} while (--to_free && --batch_free && !list_empty(list));
 	}
 	spin_unlock(&zone->lock);
@@ -2024,6 +2034,8 @@ static struct page *__rmqueue(struct zone *zone, unsigned int order,
 				int migratetype)
 {
 	/**
+	 * @brief zone->free_area 에서 필요한 사이즈의 page를 가져와 리턴
+	 * @return 요청한 order의 page ptr 리턴
 	 * @param[in] zone zone struct
 	 * @param[in] order 
 	 * @param[in] migratetype migration type
@@ -2052,11 +2064,14 @@ static int rmqueue_bulk(struct zone *zone, unsigned int order,
 			unsigned long count, struct list_head *list,
 			int migratetype, bool cold)
 {
+	/**
+	 * @brief 버디 시스템의 오더 슬롯에서 batch만큼 free 페이지를 가져와서 list에 추가한다.
+	 */
 	int i;
 
 	spin_lock(&zone->lock);
 	for (i = 0; i < count; ++i) {
-		struct page *page = __rmqueue(zone, order, migratetype);
+		struct page *page = __rmqueue(zone, order, migratetype); // free_area에서 page를 가져옴
 		if (unlikely(page == NULL))
 			break;
 
@@ -2069,11 +2084,11 @@ static int rmqueue_bulk(struct zone *zone, unsigned int order,
 		 * merge IO requests if the physical pages are ordered
 		 * properly.
 		 */
-		if (likely(!cold))
-			list_add(&page->lru, list);
+		if (likely(!cold)) // hot인 경우 list head에 추가, cold인 경우 list tail에 추가
+			list_add(&page->lru, list); // hot인 경우
 		else
-			list_add_tail(&page->lru, list);
-		list = &page->lru;
+			list_add_tail(&page->lru, list); // cold인 경우
+		list = &page->lru; // 리스트 포인터 업데이트, hot인 경우 page->lru가 head, cold인 경우 tail
 		if (is_migrate_cma(get_pcppage_migratetype(page)))
 			__mod_zone_page_state(zone, NR_FREE_CMA_PAGES,
 					      -(1 << order));
@@ -2126,7 +2141,7 @@ static void drain_pages_zone(unsigned int cpu, struct zone *zone)
 
 	pcp = &pset->pcp;
 	if (pcp->count) {
-		free_pcppages_bulk(zone, pcp->count, pcp);
+		free_pcppages_bulk(zone, pcp->count, pcp); // pcp->list에서 count만큼 buddy system에 반환
 		pcp->count = 0;
 	}
 	local_irq_restore(flags);
@@ -2144,7 +2159,7 @@ static void drain_pages(unsigned int cpu)
 	struct zone *zone;
 
 	for_each_populated_zone(zone) {
-		drain_pages_zone(cpu, zone);
+		drain_pages_zone(cpu, zone); // 모든 존에서 할당 해제
 	}
 }
 
@@ -2177,6 +2192,9 @@ void drain_local_pages(struct zone *zone)
  */
 void drain_all_pages(struct zone *zone)
 {
+	/**
+	 * @brief 지정된 zone의 모든 online cpu에 있는 per-cpu 페이지 프레임 캐시를 버디 메모리 할당자로 옮긴다.
+	 */
 	int cpu;
 
 	/*
@@ -2191,7 +2209,7 @@ void drain_all_pages(struct zone *zone)
 	 * cpu to drain that CPU pcps and on_each_cpu_mask
 	 * disables preemption as part of its processing
 	 */
-	for_each_online_cpu(cpu) {
+	for_each_online_cpu(cpu) { // pcp가 사용중인지 확인
 		struct per_cpu_pageset *pcp;
 		struct zone *z;
 		bool has_pcps = false;
@@ -2215,7 +2233,7 @@ void drain_all_pages(struct zone *zone)
 		else
 			cpumask_clear_cpu(cpu, &cpus_with_pcps);
 	}
-	on_each_cpu_mask(&cpus_with_pcps, (smp_call_func_t) drain_local_pages,
+	on_each_cpu_mask(&cpus_with_pcps, (smp_call_func_t) drain_local_pages,	// TODO) 4-78
 								zone, 1);
 }
 
@@ -2261,19 +2279,22 @@ void mark_free_pages(struct zone *zone)
  */
 void free_hot_cold_page(struct page *page, bool cold)
 {
+	/**
+	 * @brief 해제할 싱글 페이지를 pcp로 회수한다.
+	 */
 	struct zone *zone = page_zone(page);
 	struct per_cpu_pages *pcp;
 	unsigned long flags;
 	unsigned long pfn = page_to_pfn(page);
 	int migratetype;
 
-	if (!free_pages_prepare(page, 0))
+	if (!free_pages_prepare(page, 0)) // page validation check
 		return;
 
 	migratetype = get_pfnblock_migratetype(page, pfn);
 	set_pcppage_migratetype(page, migratetype);
-	local_irq_save(flags);
-	__count_vm_event(PGFREE);
+	local_irq_save(flags); // irq flag save
+	__count_vm_event(PGFREE); // PGFREE event 를 1 증가 (디버깅용)
 
 	/*
 	 * We only track unmovable, reclaimable and movable on pcp lists.
@@ -2283,23 +2304,23 @@ void free_hot_cold_page(struct page *page, bool cold)
 	 * excessively into the page allocator
 	 */
 	if (migratetype >= MIGRATE_PCPTYPES) {
-		if (unlikely(is_migrate_isolate(migratetype))) {
-			free_one_page(zone, page, pfn, 0, migratetype);							// TODO) 4-67
+		if (unlikely(is_migrate_isolate(migratetype))) { // isolate type인 경우
+			free_one_page(zone, page, pfn, 0, migratetype); // 함수 인자로 전달받은 page를 요청한 migrate type으로 설정해서 buddy 시스템으로 회수
 			goto out;
 		}
 		migratetype = MIGRATE_MOVABLE;
 	}
 
 	pcp = &this_cpu_ptr(zone->pageset)->pcp;
-	if (!cold)
+	if (!cold) // pcp list에 반납
 		list_add(&page->lru, &pcp->lists[migratetype]);
 	else
-		list_add_tail(&page->lru, &pcp->lists[migratetype]);
-	pcp->count++;
-	if (pcp->count >= pcp->high) {
+		list_add_tail(&page->lru, &pcp->lists[migratetype]); 
+	pcp->count++; // pcp count 증가
+	if (pcp->count >= pcp->high) { // 관리 카운터 제한을 넘기면 pcp의 일부를 버디 시스템으로 회수
 		unsigned long batch = READ_ONCE(pcp->batch);
-		free_pcppages_bulk(zone, batch, pcp);
-		pcp->count -= batch;
+		free_pcppages_bulk(zone, batch, pcp);										// TODO) 4-76
+		pcp->count -= batch; // pcp count 에서 batch 만큼 감소
 	}
 
 out:
@@ -2438,11 +2459,11 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 		struct per_cpu_pages *pcp;
 		struct list_head *list;
 
-		local_irq_save(flags);
-		pcp = &this_cpu_ptr(zone->pageset)->pcp;
-		list = &pcp->lists[migratetype];
-		if (list_empty(list)) {
-			pcp->count += rmqueue_bulk(zone, 0,
+		local_irq_save(flags); // IRQ flag save
+		pcp = &this_cpu_ptr(zone->pageset)->pcp; // pcp ptr를 가져옴
+		list = &pcp->lists[migratetype]; // pcp list에서 migratetype에 맞는 list 포인터를 가져옴
+		if (list_empty(list)) { // list empty check
+			pcp->count += rmqueue_bulk(zone, 0, // TODO) 4-74
 					pcp->batch, list,
 					migratetype, cold);
 			if (unlikely(list_empty(list)))
@@ -2450,12 +2471,12 @@ struct page *buffered_rmqueue(struct zone *preferred_zone,
 		}
 
 		if (cold)
-			page = list_last_entry(list, struct page, lru);
+			page = list_last_entry(list, struct page, lru); // list 끝에 추가
 		else
-			page = list_first_entry(list, struct page, lru);
+			page = list_first_entry(list, struct page, lru); // list head에 추가
 
-		list_del(&page->lru);
-		pcp->count--;
+		list_del(&page->lru); // 추가한 페이지를 제거
+		pcp->count--; // count 감소
 	} else {
 		/*
 		 * We most definitely don't want callers attempting to
@@ -4409,9 +4430,12 @@ static int default_zonelist_order(void)
 
 static void set_zonelist_order(void)
 {
-	if (user_zonelist_order == ZONELIST_ORDER_DEFAULT)
+	/**
+	 * @brief zone list order를 설정함
+	 */
+	if (user_zonelist_order == ZONELIST_ORDER_DEFAULT) // ZoneList Order가 Default로 설정 되어있는 경우
 		current_zonelist_order = default_zonelist_order();
-	else
+	else // Zonelist Order를 변경한 경우
 		current_zonelist_order = user_zonelist_order;
 }
 
@@ -4500,7 +4524,7 @@ static void build_zonelists(pg_data_t *pgdat)
 	local_node = pgdat->node_id;
 
 	zonelist = &pgdat->node_zonelists[0];
-	j = build_zonelists_node(pgdat, zonelist, 0);
+	j = build_zonelists_node(pgdat, zonelist, 0); // TODO) 4-82
 
 	/*
 	 * Now we build the zonelist so that it contains the zones
@@ -4564,13 +4588,13 @@ static int __build_all_zonelists(void *data)
 #endif
 
 	if (self && !node_online(self->node_id)) {
-		build_zonelists(self);
+		build_zonelists(self); // TODO) 4-82
 	}
 
 	for_each_online_node(nid) {
 		pg_data_t *pgdat = NODE_DATA(nid);
 
-		build_zonelists(pgdat);
+		build_zonelists(pgdat); // TODO) 4-82
 	}
 
 	/*
@@ -4609,7 +4633,7 @@ static int __build_all_zonelists(void *data)
 static noinline void __init
 build_all_zonelists_init(void)
 {
-	__build_all_zonelists(NULL);
+	__build_all_zonelists(NULL); // TODO) 4-81
 	mminit_verify_zonelist();
 	cpuset_init_current_mems_allowed();
 }
@@ -4625,21 +4649,24 @@ build_all_zonelists_init(void)
  */
 void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 {
-	set_zonelist_order();
+	/**
+	 * @brief 
+	 */
+	set_zonelist_order(); // zone 우선 순위 설정
 
 	if (system_state == SYSTEM_BOOTING) {
-		build_all_zonelists_init();
+		build_all_zonelists_init(); 
 	} else {
 #ifdef CONFIG_MEMORY_HOTPLUG
 		if (zone)
-			setup_zone_pageset(zone);
+			setup_zone_pageset(zone); // hotplug인 경우 zone initialize 진행
 #endif
 		/* we have to stop all cpus to guarantee there is no user
 		   of zonelist */
-		stop_machine(__build_all_zonelists, pgdat, NULL);
+		stop_machine(__build_all_zonelists, pgdat, NULL); 
 		/* cpuset refresh routine should be here */
 	}
-	vm_total_pages = nr_free_pagecache_pages();
+	vm_total_pages = nr_free_pagecache_pages(); // zonelist에서 high를 제외한 free 페이지를 재계산
 	/*
 	 * Disable grouping by mobility if the number of pages in the
 	 * system is too low to allow the mechanism to work. It would be
@@ -4647,7 +4674,7 @@ void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
 	 * made on memory-hotadd so a system can start with mobility
 	 * disabled and enable it later
 	 */
-	if (vm_total_pages < (pageblock_nr_pages * MIGRATE_TYPES))
+	if (vm_total_pages < (pageblock_nr_pages * MIGRATE_TYPES)) // free 메모리가 부족한 상태이므로 mobility 기능 제한
 		page_group_by_mobility_disabled = 1;
 	else
 		page_group_by_mobility_disabled = 0;
@@ -4857,6 +4884,10 @@ static void __meminit zone_init_free_lists(struct zone *zone)
 
 static int zone_batchsize(struct zone *zone)
 {
+	/**
+	 * @brief 존에 대한 batch 크기를 계산한다.
+	 * @details managed_pages가 512M를 초과한다면 batch 크기를 31로 제한된다.
+	 */
 #ifdef CONFIG_MMU
 	int batch;
 
@@ -4974,6 +5005,9 @@ static void pageset_set_high(struct per_cpu_pageset *p,
 static void pageset_set_high_and_batch(struct zone *zone,
 				       struct per_cpu_pageset *pcp)
 {
+	/**
+	 * @brief 요청 존의 pcp에 대해 high 및 batch 값을 결정한다.
+	 */
 	if (percpu_pagelist_fraction)
 		pageset_set_high(pcp,
 			(zone->managed_pages /
@@ -4986,8 +5020,8 @@ static void __meminit zone_pageset_init(struct zone *zone, int cpu)
 {
 	struct per_cpu_pageset *pcp = per_cpu_ptr(zone->pageset, cpu);
 
-	pageset_init(pcp);
-	pageset_set_high_and_batch(zone, pcp);
+	pageset_init(pcp); // 존의 페이지 세트를 초기화하고 pcp 마이그레이션 타입별 리스틀 초기화
+	pageset_set_high_and_batch(zone, pcp); // 존의 pcp에 대해 high 및 batch 값을 결정함
 }
 
 static void __meminit setup_zone_pageset(struct zone *zone)
@@ -5004,6 +5038,9 @@ static void __meminit setup_zone_pageset(struct zone *zone)
  */
 void __init setup_per_cpu_pageset(void)
 {
+	/**
+	 * @brief 활성화된 모든 존의 pcp 구성을 다시 변경한다.
+	 */
 	struct zone *zone;
 
 	for_each_populated_zone(zone)
