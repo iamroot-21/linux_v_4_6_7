@@ -1560,21 +1560,25 @@ static inline bool free_pages_prezeroed(bool poisoned)
 static int prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
 								int alloc_flags)
 {
+	/**
+	 * @brief 할당받은 페이지가 정상인지 확인
+	 * @return 정상일 경우 0, 비정상일 경우 1
+	 */
 	int i;
 	bool poisoned = true;
 
 	for (i = 0; i < (1 << order); i++) {
 		struct page *p = page + i;
-		if (unlikely(check_new_page(p)))
+		if (unlikely(check_new_page(p))) // page가 정상인지 확인
 			return 1;
 		if (poisoned)
 			poisoned &= page_is_poisoned(p);
 	}
 
-	set_page_private(page, 0);
-	set_page_refcounted(page);
+	set_page_private(page, 0); // page->private = 0
+	set_page_refcounted(page); // 레퍼런스 카운트 증가
 
-	arch_alloc_page(page, order);
+	arch_alloc_page(page, order); // arm64 사용 X (아키텍처 별로 page allocation이 있는 경우에만 쓰는 듯)
 	kernel_map_pages(page, 1 << order, 1);
 	kernel_poison_pages(page, 1 << order, 1);
 	kasan_alloc_pages(page, order);
@@ -2742,7 +2746,7 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 	int nr_fair_skipped = 0;
 	bool zonelist_rescan;
 
-zonelist_scan:
+zonelist_scan: // 충분한 사이즈를 가지고 있는 zone을 찾는다.
 	zonelist_rescan = false;
 
 	/*
@@ -2753,7 +2757,7 @@ zonelist_scan:
 								ac->nodemask) {
 		unsigned long mark;
 
-		if (cpusets_enabled() &&
+		if (cpusets_enabled() && // cpusets가 활성화된 경우
 			(alloc_flags & ALLOC_CPUSET) &&
 			!cpuset_zone_allowed(zone, gfp_mask))
 				continue;
@@ -2763,10 +2767,10 @@ zonelist_scan:
 		 * page was allocated in should have no effect on the
 		 * time the page has in memory before being reclaimed.
 		 */
-		if (alloc_flags & ALLOC_FAIR) {
-			if (!zone_local(ac->preferred_zone, zone))
+		if (alloc_flags & ALLOC_FAIR) { // preferred zone의 node에서 할당을 시도
+			if (!zone_local(ac->preferred_zone, zone)) // local zone인지 확인
 				break;
-			if (test_bit(ZONE_FAIR_DEPLETED, &zone->flags)) {
+			if (test_bit(ZONE_FAIR_DEPLETED, &zone->flags)) { 
 				nr_fair_skipped++;
 				continue;
 			}
@@ -2797,34 +2801,34 @@ zonelist_scan:
 		 * will require awareness of zones in the
 		 * dirty-throttling and the flusher threads.
 		 */
-		if (ac->spread_dirty_pages && !zone_dirty_ok(zone))
+		if (ac->spread_dirty_pages && !zone_dirty_ok(zone)) // 파일 쓰기 목적으로 할당되는 페이지 캐시가 증가하여 현재 존의 더티 제한 기준치를 초과한다면 스킵한다.
 			continue;
 
 		mark = zone->watermark[alloc_flags & ALLOC_WMARK_MASK];
-		if (!zone_watermark_ok(zone, order, mark,
+		if (!zone_watermark_ok(zone, order, mark, // water mark 값이 유효한지 확인
 				       ac->classzone_idx, alloc_flags)) {
 			int ret;
 
 			/* Checked here to keep the fast path fast */
 			BUILD_BUG_ON(ALLOC_NO_WATERMARKS < NR_WMARK);
-			if (alloc_flags & ALLOC_NO_WATERMARKS)
-				goto try_this_zone;
+			if (alloc_flags & ALLOC_NO_WATERMARKS) // allocation 시 watermark 값이 필요 없는 경우
+				goto try_this_zone; // 할당 진행
 
-			if (zone_reclaim_mode == 0 ||
-			    !zone_allows_reclaim(ac->preferred_zone, zone))
+			if (zone_reclaim_mode == 0 || // reclaim_moide가 설정된 경우
+			    !zone_allows_reclaim(ac->preferred_zone, zone)) // distance가 일정 수치가 넘어 reclaim이 allow 되지 않은 경우
 				continue;
-
-			ret = zone_reclaim(zone, gfp_mask, order);
+// ... 4-91)
+			ret = zone_reclaim(zone, gfp_mask, order); // 페이지 회수 TODO) 책에 없음, 분석 필요
 			switch (ret) {
-			case ZONE_RECLAIM_NOSCAN:
+			case ZONE_RECLAIM_NOSCAN: // 스캔을 하지 않은 경우
 				/* did not scan */
 				continue;
-			case ZONE_RECLAIM_FULL:
+			case ZONE_RECLAIM_FULL: // 회수 시도했으나 실패한 경우
 				/* scanned but unreclaimable */
 				continue;
-			default:
+			default: // 성공 케이스
 				/* did we reclaim enough */
-				if (zone_watermark_ok(zone, order, mark,
+				if (zone_watermark_ok(zone, order, mark, // watermark 가 정상인 경우 할당 진행
 						ac->classzone_idx, alloc_flags))
 					goto try_this_zone;
 
@@ -2833,17 +2837,17 @@ zonelist_scan:
 		}
 
 try_this_zone:
-		page = buffered_rmqueue(ac->preferred_zone, zone, order,
+		page = buffered_rmqueue(ac->preferred_zone, zone, order, // 해당 zone에서 페이지를 할당
 				gfp_mask, alloc_flags, ac->migratetype);
-		if (page) {
-			if (prep_new_page(page, order, gfp_mask, alloc_flags))
+		if (page) { // 페이지 예외처리 진행
+			if (prep_new_page(page, order, gfp_mask, alloc_flags)) // 페이지가 비정상일 경우 재시도
 				goto try_this_zone;
 
 			/*
 			 * If this is a high-order atomic allocation then check
 			 * if the pageblock should be reserved for the future
 			 */
-			if (unlikely(order && (alloc_flags & ALLOC_HARDER)))
+			if (unlikely(order && (alloc_flags & ALLOC_HARDER))) // 
 				reserve_highatomic_pageblock(page, zone, order);
 
 			return page;
@@ -3421,24 +3425,31 @@ struct page *
 __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 			struct zonelist *zonelist, nodemask_t *nodemask)
 {
+	/**
+	 * @brief fastpath 페이지 할당 진행
+	 * @details fastpath 페이지 할당이 실패했을 경우 slowpath 를 내부에서 진행
+	 */
 	struct zoneref *preferred_zoneref;
 	struct page *page = NULL;
 	unsigned int cpuset_mems_cookie;
+	// ALLOC_WMARK_LOW : 워터마크 하한까지 페이지 할당 제한
+	// ALLOC_CPUSET : 현재 태스크에서 cgroup의 cpuset 서브시스템에서 설정한 정책 사용
+	// ALLOC_FAIR : NUMA 시스템에서 공정한 노드별 할당을 사용
 	int alloc_flags = ALLOC_WMARK_LOW|ALLOC_CPUSET|ALLOC_FAIR;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
-	struct alloc_context ac = {
-		.high_zoneidx = gfp_zone(gfp_mask),
+	struct alloc_context ac = { 
+		.high_zoneidx = gfp_zone(gfp_mask), // 요청 존 이하에서 할당되도록 값 제한
 		.nodemask = nodemask,
-		.migratetype = gfpflags_to_migratetype(gfp_mask),
+		.migratetype = gfpflags_to_migratetype(gfp_mask), // 할당받을 마이그레이션 타입을 gfp 플래그에서 구한다.
 	};
 
 	gfp_mask &= gfp_allowed_mask;
 
 	lockdep_trace_alloc(gfp_mask);
 
-	might_sleep_if(gfp_mask & __GFP_DIRECT_RECLAIM);
+	might_sleep_if(gfp_mask & __GFP_DIRECT_RECLAIM); // 선점 포인트를 실행
 
-	if (should_fail_alloc_page(gfp_mask, order))
+	if (should_fail_alloc_page(gfp_mask, order)) // Fail check
 		return NULL;
 
 	/*
@@ -3446,14 +3457,14 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 	 * valid zone. It's possible to have an empty zonelist as a result
 	 * of __GFP_THISNODE and a memoryless node
 	 */
-	if (unlikely(!zonelist->_zonerefs->zone))
+	if (unlikely(!zonelist->_zonerefs->zone)) // zone이 없는 경우
 		return NULL;
 
-	if (IS_ENABLED(CONFIG_CMA) && ac.migratetype == MIGRATE_MOVABLE)
+	if (IS_ENABLED(CONFIG_CMA) && ac.migratetype == MIGRATE_MOVABLE) // CMA 설정시, ALLOC_CMA 플래그 설정
 		alloc_flags |= ALLOC_CMA;
 
 retry_cpuset:
-	cpuset_mems_cookie = read_mems_allowed_begin();
+	cpuset_mems_cookie = read_mems_allowed_begin(); // cpuset 관련한 read sequence 값을 구한다.
 
 	/* We set it here, as __alloc_pages_slowpath might have changed it */
 	ac.zonelist = zonelist;
@@ -3462,7 +3473,7 @@ retry_cpuset:
 	ac.spread_dirty_pages = (gfp_mask & __GFP_WRITE);
 
 	/* The preferred zone is used for statistics later */
-	preferred_zoneref = first_zones_zonelist(ac.zonelist, ac.high_zoneidx,
+	preferred_zoneref = first_zones_zonelist(ac.zonelist, ac.high_zoneidx, // 사용 가능한 첫 번째 존을 저장
 				ac.nodemask ? : &cpuset_current_mems_allowed,
 				&ac.preferred_zone);
 	if (!ac.preferred_zone)
@@ -3470,8 +3481,8 @@ retry_cpuset:
 	ac.classzone_idx = zonelist_zone_idx(preferred_zoneref);
 
 	/* First allocation attempt */
-	alloc_mask = gfp_mask|__GFP_HARDWALL;
-	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);
+	alloc_mask = gfp_mask|__GFP_HARDWALL; // GRP_HARDWALL : fastpath 할당 요청, 유저 태스크에서 할당 요청, Slab 할당 요청 (여기선 fastpath 할당 요청)
+	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac); // TODO) 4-90
 	if (unlikely(!page)) {
 		/*
 		 * Runtime PM, block IO and its error handling path
@@ -3496,10 +3507,10 @@ out:
 	 * the mask is being updated. If a page allocation is about to fail,
 	 * check if the cpuset changed during allocation and if so, retry.
 	 */
-	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
+	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie))) // 할당 실패 및 cpuset 설정이 바뀐 경우, 페이지 할당을 다시 시도
 		goto retry_cpuset;
 
-	return page;
+	return page; // 페이지 리턴
 }
 EXPORT_SYMBOL(__alloc_pages_nodemask);
 
@@ -4148,18 +4159,21 @@ static void zoneref_set_zone(struct zone *zone, struct zoneref *zoneref)
 static int build_zonelists_node(pg_data_t *pgdat, struct zonelist *zonelist,
 				int nr_zones)
 {
+	/**
+	 * @brief 모든 zone을 역순으로 build 진행
+	 */
 	struct zone *zone;
 	enum zone_type zone_type = MAX_NR_ZONES;
 
 	do {
 		zone_type--;
-		zone = pgdat->node_zones + zone_type;
-		if (populated_zone(zone)) {
-			zoneref_set_zone(zone,
+		zone = pgdat->node_zones + zone_type; // zone = pgdat->node_zones[zone_type]
+		if (populated_zone(zone)) { 
+			zoneref_set_zone(zone, // 해당 zone이 사용 가능할 경우 zonelist에 추가
 				&zonelist->_zonerefs[nr_zones++]);
-			check_highest_zone(zone_type);
+			check_highest_zone(zone_type); // ZONE_MOVABLE을 제외한 최고 존을 policy_zone에 기억한다.
 		}
-	} while (zone_type);
+	} while (zone_type); // 모든 zone type을 역순으로 진행
 
 	return nr_zones;
 }
@@ -4184,8 +4198,9 @@ static int build_zonelists_node(pg_data_t *pgdat, struct zonelist *zonelist,
 static int current_zonelist_order = ZONELIST_ORDER_DEFAULT;
 static char zonelist_order_name[3][8] = {"Default", "Node", "Zone"};
 
-
+#define CONFIG_NUMA // 임시 선언
 #ifdef CONFIG_NUMA
+#undef CONFIG_NUMA // 임시 선언
 /* The value user specified ....changed by config */
 static int user_zonelist_order = ZONELIST_ORDER_DEFAULT;
 /* string for sysctl */
@@ -4346,14 +4361,17 @@ static int find_next_best_node(int node, nodemask_t *used_node_mask)
  */
 static void build_zonelists_in_node_order(pg_data_t *pgdat, int node)
 {
+	/**
+	 * @brief 노드 우선으로 zonelist를 생성
+	 */
 	int j;
 	struct zonelist *zonelist;
 
 	zonelist = &pgdat->node_zonelists[0];
-	for (j = 0; zonelist->_zonerefs[j].zone != NULL; j++)
+	for (j = 0; zonelist->_zonerefs[j].zone != NULL; j++) // zonelist에서 활성화된 zone을 찾음
 		;
-	j = build_zonelists_node(NODE_DATA(node), zonelist, j);
-	zonelist->_zonerefs[j].zone = NULL;
+	j = build_zonelists_node(NODE_DATA(node), zonelist, j); // zone build 진행 
+	zonelist->_zonerefs[j].zone = NULL; // zonelist 마지막을 NULL로 초기화
 	zonelist->_zonerefs[j].zone_idx = 0;
 }
 
@@ -4362,11 +4380,14 @@ static void build_zonelists_in_node_order(pg_data_t *pgdat, int node)
  */
 static void build_thisnode_zonelists(pg_data_t *pgdat)
 {
+	/**
+	 * @brief 지정된 노드에 대해서만 zonelist[1]을 구성한다.
+	 */
 	int j;
 	struct zonelist *zonelist;
 
-	zonelist = &pgdat->node_zonelists[1];
-	j = build_zonelists_node(pgdat, zonelist, 0);
+	zonelist = &pgdat->node_zonelists[1]; // *zonelist = pgdat->zone_node_zonelists[1]
+	j = build_zonelists_node(pgdat, zonelist, 0); // zone build
 	zonelist->_zonerefs[j].zone = NULL;
 	zonelist->_zonerefs[j].zone_idx = 0;
 }
@@ -4381,6 +4402,9 @@ static int node_order[MAX_NUMNODES];
 
 static void build_zonelists_in_zone_order(pg_data_t *pgdat, int nr_nodes)
 {
+	/**
+	 * @brief zonelist를 zone 우선으로 만들어낸다.
+	 */
 	int pos, j, node;
 	int zone_type;		/* needs to be signed */
 	struct zone *z;
@@ -4388,18 +4412,18 @@ static void build_zonelists_in_zone_order(pg_data_t *pgdat, int nr_nodes)
 
 	zonelist = &pgdat->node_zonelists[0];
 	pos = 0;
-	for (zone_type = MAX_NR_ZONES - 1; zone_type >= 0; zone_type--) {
-		for (j = 0; j < nr_nodes; j++) {
+	for (zone_type = MAX_NR_ZONES - 1; zone_type >= 0; zone_type--) { // 역순으로 루프
+		for (j = 0; j < nr_nodes; j++) { // node 순서대로
 			node = node_order[j];
 			z = &NODE_DATA(node)->node_zones[zone_type];
-			if (populated_zone(z)) {
-				zoneref_set_zone(z,
+			if (populated_zone(z)) { // 해당 노드에서 zone이 활성화 되어 있는 지 확인
+				zoneref_set_zone(z, // 활성화된 경우 zone 기록
 					&zonelist->_zonerefs[pos++]);
-				check_highest_zone(zone_type);
+				check_highest_zone(zone_type); // highest_zone 기록
 			}
 		}
 	}
-	zonelist->_zonerefs[pos].zone = NULL;
+	zonelist->_zonerefs[pos].zone = NULL; // 마지막 zone 초기화
 	zonelist->_zonerefs[pos].zone_idx = 0;
 }
 
@@ -4441,14 +4465,17 @@ static void set_zonelist_order(void)
 
 static void build_zonelists(pg_data_t *pgdat)
 {
+	/**
+	 * @brief 
+	 */
 	int i, node, load;
 	nodemask_t used_mask;
 	int local_node, prev_node;
 	struct zonelist *zonelist;
-	unsigned int order = current_zonelist_order;
+	unsigned int order = current_zonelist_order; // 현재 order 값 저장
 
 	/* initialize zonelists */
-	for (i = 0; i < MAX_ZONELISTS; i++) {
+	for (i = 0; i < MAX_ZONELISTS; i++) { // ZONE Type 을 순서대로 초기화
 		zonelist = pgdat->node_zonelists + i;
 		zonelist->_zonerefs[0].zone = NULL;
 		zonelist->_zonerefs[0].zone_idx = 0;
@@ -4463,30 +4490,30 @@ static void build_zonelists(pg_data_t *pgdat)
 	memset(node_order, 0, sizeof(node_order));
 	i = 0;
 
-	while ((node = find_next_best_node(local_node, &used_mask)) >= 0) {
+	while ((node = find_next_best_node(local_node, &used_mask)) >= 0) { // 비트맵에 포함되지 않은 노드 중 가장 인접한 노드 id를 구한다.
 		/*
 		 * We don't want to pressure a particular node.
 		 * So adding penalty to the first node in same
 		 * distance group to make it round-robin.
 		 */
-		if (node_distance(local_node, node) !=
+		if (node_distance(local_node, node) != // 현재 노드와 인접 노드가 distance가 다를 경우
 		    node_distance(local_node, prev_node))
-			node_load[node] = load;
+			node_load[node] = load; // load 값 입력
 
 		prev_node = node;
 		load--;
-		if (order == ZONELIST_ORDER_NODE)
-			build_zonelists_in_node_order(pgdat, node);
+		if (order == ZONELIST_ORDER_NODE) // 
+			build_zonelists_in_node_order(pgdat, node); // TODO) 4-83
 		else
 			node_order[i++] = node;	/* remember order */
 	}
 
-	if (order == ZONELIST_ORDER_ZONE) {
+	if (order == ZONELIST_ORDER_ZONE) { // zonelist 순서가 zone 순서대로인 경우
 		/* calculate node order -- i.e., DMA last! */
-		build_zonelists_in_zone_order(pgdat, i);
+		build_zonelists_in_zone_order(pgdat, i); // TODO) 4-85
 	}
 
-	build_thisnode_zonelists(pgdat);
+	build_thisnode_zonelists(pgdat); // 현재 노드에 대해 활성화된 존을 zonelist[1]에 추가
 }
 
 #ifdef CONFIG_HAVE_MEMORYLESS_NODES
@@ -4524,7 +4551,7 @@ static void build_zonelists(pg_data_t *pgdat)
 	local_node = pgdat->node_id;
 
 	zonelist = &pgdat->node_zonelists[0];
-	j = build_zonelists_node(pgdat, zonelist, 0); // TODO) 4-82
+	j = build_zonelists_node(pgdat, zonelist, 0);
 
 	/*
 	 * Now we build the zonelist so that it contains the zones
@@ -4587,11 +4614,11 @@ static int __build_all_zonelists(void *data)
 	memset(node_load, 0, sizeof(node_load));
 #endif
 
-	if (self && !node_online(self->node_id)) {
+	if (self && !node_online(self->node_id)) { // online 노드가 아닌 경우 self 에서 zonelist 구성
 		build_zonelists(self); // TODO) 4-82
 	}
 
-	for_each_online_node(nid) {
+	for_each_online_node(nid) { // oneline 노드인 경우, 각 노드 별로 zonelist 구성
 		pg_data_t *pgdat = NODE_DATA(nid);
 
 		build_zonelists(pgdat); // TODO) 4-82
@@ -4611,7 +4638,7 @@ static int __build_all_zonelists(void *data)
 	 * (a chicken-egg dilemma).
 	 */
 	for_each_possible_cpu(cpu) {
-		setup_pageset(&per_cpu(boot_pageset, cpu), 0);
+		setup_pageset(&per_cpu(boot_pageset, cpu), 0); // per cpu page set
 
 #ifdef CONFIG_HAVE_MEMORYLESS_NODES
 		/*
@@ -4622,8 +4649,8 @@ static int __build_all_zonelists(void *data)
 		 * secondary cpus' numa_mem as they come on-line.  During
 		 * node/memory hotplug, we'll fixup all on-line cpus.
 		 */
-		if (cpu_online(cpu))
-			set_cpu_numa_mem(cpu, local_memory_node(cpu_to_node(cpu)));
+		if (cpu_online(cpu)) // online cpu인 경우
+			set_cpu_numa_mem(cpu, local_memory_node(cpu_to_node(cpu))); // 배열에 노드 id를 설정한다.
 #endif
 	}
 

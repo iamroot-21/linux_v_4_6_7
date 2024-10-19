@@ -3609,8 +3609,9 @@ static int __init kswapd_init(void)
 }
 
 module_init(kswapd_init)
-
+#define CONFIG_NUMA // 임시 선언
 #ifdef CONFIG_NUMA
+#undef CONFIG_NUMA // 임시 선언
 /*
  * Zone reclaim mode
  *

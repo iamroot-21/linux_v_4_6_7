@@ -787,35 +787,35 @@ static long do_set_mempolicy(unsigned short mode, unsigned short flags,
 			     nodemask_t *nodes)
 {
 	struct mempolicy *new, *old;
-	NODEMASK_SCRATCH(scratch);
+	NODEMASK_SCRATCH(scratch); // 임시 변수 할당
 	int ret;
 
 	if (!scratch)
 		return -ENOMEM;
 
-	new = mpol_new(mode, flags, nodes);
+	new = mpol_new(mode, flags, nodes); // kmem_cache에 할당했던 policy_cache 를 가져옴
 	if (IS_ERR(new)) {
 		ret = PTR_ERR(new);
 		goto out;
 	}
 
-	task_lock(current);
-	ret = mpol_set_nodemask(new, nodes, scratch);
-	if (ret) {
+	task_lock(current); // spin lock
+	ret = mpol_set_nodemask(new, nodes, scratch); // 생성된 mempolicy의 대응하는 필드에 노드 비트맵을 설정한다.
+	if (ret) { // new 를 사용할 수 없는 케이스
 		task_unlock(current);
 		mpol_put(new);
 		goto out;
 	}
-	old = current->mempolicy;
-	current->mempolicy = new;
+	old = current->mempolicy; // old 값 백업
+	current->mempolicy = new; // 최신 값을 덮어 씀
 	if (new && new->mode == MPOL_INTERLEAVE &&
 	    nodes_weight(new->v.nodes))
 		current->il_next = first_node(new->v.nodes);
-	task_unlock(current);
-	mpol_put(old);
+	task_unlock(current); // unlock
+	mpol_put(old); // old를 cache 로 반환
 	ret = 0;
 out:
-	NODEMASK_SCRATCH_FREE(scratch);
+	NODEMASK_SCRATCH_FREE(scratch); // 임시 할당했던 scratch 변수 할당 해제
 	return ret;
 }
 
@@ -2594,20 +2594,23 @@ static inline void __init check_numabalancing_enable(void)
 /* assumes fs == KERNEL_DS */
 void __init numa_policy_init(void)
 {
+	/**
+	 * @brief numa policy 초기화 진행
+	 */
 	nodemask_t interleave_nodes;
 	unsigned long largest = 0;
 	int nid, prefer = 0;
 
-	policy_cache = kmem_cache_create("numa_policy",
+	policy_cache = kmem_cache_create("numa_policy", // mempolicy cache 생성
 					 sizeof(struct mempolicy),
 					 0, SLAB_PANIC, NULL);
 
-	sn_cache = kmem_cache_create("shared_policy_node",
+	sn_cache = kmem_cache_create("shared_policy_node", // sp_node cache 생성
 				     sizeof(struct sp_node),
 				     0, SLAB_PANIC, NULL);
 
 	for_each_node(nid) {
-		preferred_node_policy[nid] = (struct mempolicy) {
+		preferred_node_policy[nid] = (struct mempolicy) { // 전역 변수 preferred_node_policy 를 각 node 별로 초기화
 			.refcnt = ATOMIC_INIT(1),
 			.mode = MPOL_PREFERRED,
 			.flags = MPOL_F_MOF | MPOL_F_MORON,
@@ -2620,29 +2623,29 @@ void __init numa_policy_init(void)
 	 * enabled across suitably sized nodes (default is >= 16MB), or
 	 * fall back to the largest node if they're all smaller.
 	 */
-	nodes_clear(interleave_nodes);
+	nodes_clear(interleave_nodes); // 앞에서 선언한 interleave_nodes 초기화
 	for_each_node_state(nid, N_MEMORY) {
-		unsigned long total_pages = node_present_pages(nid);
+		unsigned long total_pages = node_present_pages(nid); // node 의 present page를 리턴
 
 		/* Preserve the largest node */
-		if (largest < total_pages) {
+		if (largest < total_pages) { // 가장 큰 노드 확인
 			largest = total_pages;
 			prefer = nid;
 		}
 
 		/* Interleave this node? */
-		if ((total_pages << PAGE_SHIFT) >= (16 << 20))
-			node_set(nid, interleave_nodes);
+		if ((total_pages << PAGE_SHIFT) >= (16 << 20))  // 16MB 이상의 메모리 노드일 경우
+			node_set(nid, interleave_nodes); // interleave nodes로 설정
 	}
 
 	/* All too small, use the largest */
-	if (unlikely(nodes_empty(interleave_nodes)))
-		node_set(prefer, interleave_nodes);
+	if (unlikely(nodes_empty(interleave_nodes))) // interleave_node가 없는 경우
+		node_set(prefer, interleave_nodes); // interleave nodes로 설정
 
-	if (do_set_mempolicy(MPOL_INTERLEAVE, 0, &interleave_nodes))
+	if (do_set_mempolicy(MPOL_INTERLEAVE, 0, &interleave_nodes)) // TODO) 4-87
 		pr_err("%s: interleaving failed\n", __func__);
 
-	check_numabalancing_enable();
+	check_numabalancing_enable(); // CONFIG_NUMA_BALANCING 커널 옵션이 있는 경우 NUMA 밸런싱 체크
 }
 
 /* Reset policy of current process to default */

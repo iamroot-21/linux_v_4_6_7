@@ -793,6 +793,9 @@ unsigned long __init node_memmap_size_bytes(int, unsigned long, unsigned long);
 
 static inline int populated_zone(struct zone *zone)
 {
+	/**
+	 * @brief 해당 zone이 활성화 되어 있는 지 확인
+	 */
 	return (!!zone->present_pages);
 }
 

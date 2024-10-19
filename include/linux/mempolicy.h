@@ -16,7 +16,9 @@
 
 struct mm_struct;
 
+#define CONFIG_NUMA // 임시 선언
 #ifdef CONFIG_NUMA
+#undef CONFIG_NUMA
 
 /*
  * Describe a memory policy.
