@@ -3646,8 +3646,8 @@ int sysctl_min_slab_ratio = 5;
 
 static inline unsigned long zone_unmapped_file_pages(struct zone *zone)
 {
-	unsigned long file_mapped = zone_page_state(zone, NR_FILE_MAPPED);
-	unsigned long file_lru = zone_page_state(zone, NR_INACTIVE_FILE) +
+	unsigned long file_mapped = zone_page_state(zone, NR_FILE_MAPPED); // NR_FILE_MAPPED state를 가져옴
+	unsigned long file_lru = zone_page_state(zone, NR_INACTIVE_FILE) + // NR_INACTIVE_FILE, NR_ACTIVE_FILE state를 가져옴
 		zone_page_state(zone, NR_ACTIVE_FILE);
 
 	/*
@@ -3655,10 +3655,15 @@ static inline unsigned long zone_unmapped_file_pages(struct zone *zone)
 	 * accounted for by the pages on the file LRU lists because
 	 * tmpfs pages accounted for as ANON can also be FILE_MAPPED
 	 */
-	return (file_lru > file_mapped) ? (file_lru - file_mapped) : 0;
+	return (file_lru > file_mapped) ? (file_lru - file_mapped) : 0; // lru 보다 mapped file이 많은 지 확인
 }
 
 /* Work out how many page cache pages we can reclaim in this reclaim_mode */
+/**
+ * @brief pagecache 에서 reclaimable page를 계산해 리턴
+ * @param[in,out] zone target zone
+ * @return reclaim 가능한 페이지 개수
+ */
 static unsigned long zone_pagecache_reclaimable(struct zone *zone)
 {
 	unsigned long nr_pagecache_reclaimable;
@@ -3670,24 +3675,27 @@ static unsigned long zone_pagecache_reclaimable(struct zone *zone)
 	 * pages like swapcache and zone_unmapped_file_pages() provides
 	 * a better estimate
 	 */
-	if (zone_reclaim_mode & RECLAIM_UNMAP)
-		nr_pagecache_reclaimable = zone_page_state(zone, NR_FILE_PAGES);
+	if (zone_reclaim_mode & RECLAIM_UNMAP) // reclaim 시 unmap 해야하는 경우
+		nr_pagecache_reclaimable = zone_page_state(zone, NR_FILE_PAGES); // zone page state를 읽어 리턴함
 	else
-		nr_pagecache_reclaimable = zone_unmapped_file_pages(zone);
+		nr_pagecache_reclaimable = zone_unmapped_file_pages(zone); // lru 보다 mapped page가 더 많은 지 확인
 
 	/* If we can't clean pages, remove dirty pages from consideration */
-	if (!(zone_reclaim_mode & RECLAIM_WRITE))
-		delta += zone_page_state(zone, NR_FILE_DIRTY);
+	if (!(zone_reclaim_mode & RECLAIM_WRITE)) // reclaim 시 write까지 하는 경우
+		delta += zone_page_state(zone, NR_FILE_DIRTY); // dirty state 를 읽어 delta에 저장
 
 	/* Watch for any possible underflows due to delta */
-	if (unlikely(delta > nr_pagecache_reclaimable))
+	if (unlikely(delta > nr_pagecache_reclaimable)) // underflow 검사
 		delta = nr_pagecache_reclaimable;
 
-	return nr_pagecache_reclaimable - delta;
+	return nr_pagecache_reclaimable - delta; // pagecache 에서 reclaimable page를 계산해 리턴
 }
 
 /*
  * Try to free up some pages from this zone through reclaim.
+ */
+/**
+ * @brief 할당 해제
  */
 static int __zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 {
@@ -3705,7 +3713,7 @@ static int __zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 		.may_swap = 1,
 	};
 
-	cond_resched();
+	cond_resched(); // 하드웨어 동기화 (확인 필요)
 	/*
 	 * We need to be able to allocate from the reserves for RECLAIM_UNMAP
 	 * and we also need to be able to write out pages for RECLAIM_WRITE
@@ -3732,6 +3740,12 @@ static int __zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 	return sc.nr_reclaimed >= nr_pages;
 }
 
+/**
+ * @brief 해당 zone의 free page 회수를 시행
+ * @param[in,out] zone
+ * @param[in] gfp_mask
+ * @param[in] order
+ */
 int zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 {
 	int node_id;
@@ -3747,8 +3761,8 @@ int zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 	 * if less than a specified percentage of the zone is used by
 	 * unmapped file backed pages.
 	 */
-	if (zone_pagecache_reclaimable(zone) <= zone->min_unmapped_pages &&
-	    zone_page_state(zone, NR_SLAB_RECLAIMABLE) <= zone->min_slab_pages)
+	if (zone_pagecache_reclaimable(zone) <= zone->min_unmapped_pages && // reclaimable page 가 최소 unmapped page 보다 작은 경우
+	    zone_page_state(zone, NR_SLAB_RECLAIMABLE) <= zone->min_slab_pages) // reclaimage page 수가 최소 페이지 보다 작은 경우
 		return ZONE_RECLAIM_FULL;
 
 	if (!zone_reclaimable(zone))
@@ -3757,7 +3771,7 @@ int zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 	/*
 	 * Do not scan if the allocation should not be delayed.
 	 */
-	if (!gfpflags_allow_blocking(gfp_mask) || (current->flags & PF_MEMALLOC))
+	if (!gfpflags_allow_blocking(gfp_mask) || (current->flags & PF_MEMALLOC)) // ??
 		return ZONE_RECLAIM_NOSCAN;
 
 	/*

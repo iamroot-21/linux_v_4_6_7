@@ -28,7 +28,9 @@
 
 struct alloc_context; /* in mm/internal.h */
 
+#define CONFIG_COMPACTION // 임시 선언
 #ifdef CONFIG_COMPACTION
+#undef CONFIG_COMPACTION // 임시 선언
 extern int sysctl_compact_memory;
 extern int sysctl_compaction_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos);

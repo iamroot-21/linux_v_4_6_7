@@ -275,17 +275,22 @@ static void wb_min_max_ratio(struct bdi_writeback *wb,
  */
 static unsigned long zone_dirtyable_memory(struct zone *zone)
 {
+	/**
+	 * @brief dirty page로 사용 가능한 page 개수를 리턴
+	 * @param[in,out] zone 타겟 zone
+	 * @return 계산한 page 값
+	 */
 	unsigned long nr_pages;
 
-	nr_pages = zone_page_state(zone, NR_FREE_PAGES);
+	nr_pages = zone_page_state(zone, NR_FREE_PAGES); // free page 개수 리턴
 	/*
 	 * Pages reserved for the kernel should not be considered
 	 * dirtyable, to prevent a situation where reclaim has to
 	 * clean pages in order to balance the zones.
 	 */
-	nr_pages -= min(nr_pages, zone->totalreserve_pages);
+	nr_pages -= min(nr_pages, zone->totalreserve_pages); // 메모리 부족 시 할당할 reserved page는 제거
 
-	nr_pages += zone_page_state(zone, NR_INACTIVE_FILE);
+	nr_pages += zone_page_state(zone, NR_INACTIVE_FILE); // INACTIVE 개수 리턴
 	nr_pages += zone_page_state(zone, NR_ACTIVE_FILE);
 
 	return nr_pages;
@@ -336,18 +341,18 @@ static unsigned long global_dirtyable_memory(void)
 {
 	unsigned long x;
 
-	x = global_page_state(NR_FREE_PAGES);
+	x = global_page_state(NR_FREE_PAGES); // 전체 zone에서 free page 개수 계산
 	/*
 	 * Pages reserved for the kernel should not be considered
 	 * dirtyable, to prevent a situation where reclaim has to
 	 * clean pages in order to balance the zones.
 	 */
-	x -= min(x, totalreserve_pages);
-
+	x -= min(x, totalreserve_pages); // reserved page 개수 만큼 제거
+0
 	x += global_page_state(NR_INACTIVE_FILE);
 	x += global_page_state(NR_ACTIVE_FILE);
 
-	if (!vm_highmem_is_dirtyable)
+	if (!vm_highmem_is_dirtyable) // highmem dirtyable 체크
 		x -= highmem_dirtyable_memory(x);
 
 	return x + 1;	/* Ensure that we never return 0 */
@@ -446,20 +451,23 @@ void global_dirty_limits(unsigned long *pbackground, unsigned long *pdirty)
  */
 static unsigned long zone_dirty_limit(struct zone *zone)
 {
-	unsigned long zone_memory = zone_dirtyable_memory(zone);
+	/**
+	 * @brief dirty 페이지 제한 값을 계산
+	 */
+	unsigned long zone_memory = zone_dirtyable_memory(zone); // TODO) 4-94, dirty 페이지로 사용 가능한 개수를 가져옴
 	struct task_struct *tsk = current;
 	unsigned long dirty;
 
-	if (vm_dirty_bytes)
+	if (vm_dirty_bytes) //dirty byte 설정
 		dirty = DIV_ROUND_UP(vm_dirty_bytes, PAGE_SIZE) *
 			zone_memory / global_dirtyable_memory();
 	else
 		dirty = vm_dirty_ratio * zone_memory / 100;
 
-	if (tsk->flags & PF_LESS_THROTTLE || rt_task(tsk))
+	if (tsk->flags & PF_LESS_THROTTLE || rt_task(tsk)) // Less Throttle 설정이 추가된 경우 25% 추가
 		dirty += dirty / 4;
 
-	return dirty;
+	return dirty; // 계산한 dirty page 제한 값 리턴
 }
 
 /**

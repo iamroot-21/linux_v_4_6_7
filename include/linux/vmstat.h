@@ -127,10 +127,16 @@ static inline unsigned long global_page_state(enum zone_stat_item item)
 	return x;
 }
 
+/**
+ * @brief kernel 메모리에서 long 데이터를 atomic으로 읽어옴
+ * @param[in,out] zone target zone
+ * @param[in] item 읽어올 stat
+ * @return zone state
+ */
 static inline unsigned long zone_page_state(struct zone *zone,
 					enum zone_stat_item item)
 {
-	long x = atomic_long_read(&zone->vm_stat[item]);
+	long x = atomic_long_read(&zone->vm_stat[item]); // atomic_long_read
 #ifdef CONFIG_SMP
 	if (x < 0)
 		x = 0;

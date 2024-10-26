@@ -22,6 +22,7 @@
 #include <linux/freezer.h>
 #include "internal.h"
 
+#define CONFIG_COMPACTION //임시 선언
 #ifdef CONFIG_COMPACTION
 static inline void count_compact_event(enum vm_event_item item)
 {

@@ -2847,7 +2847,7 @@ try_this_zone:
 			 * If this is a high-order atomic allocation then check
 			 * if the pageblock should be reserved for the future
 			 */
-			if (unlikely(order && (alloc_flags & ALLOC_HARDER))) // 
+			if (unlikely(order && (alloc_flags & ALLOC_HARDER))) // Atomic 할당을 위해 Migrate_HighAtomic 타입으로 일정 소량의 페이지 블록을 준비
 				reserve_highatomic_pageblock(page, zone, order);
 
 			return page;
@@ -3022,7 +3022,10 @@ out:
 	return page;
 }
 
+#define CONFIG_COMPACTION // 임시 선언
 #ifdef CONFIG_COMPACTION
+#undef CONFIG_COMPACTION // 임시 선언
+
 /* Try memory compaction for high-order allocations before reclaim */
 static struct page *
 __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
@@ -3057,16 +3060,16 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	 */
 	count_vm_event(COMPACTSTALL);
 
-	page = get_page_from_freelist(gfp_mask, order,
+	page = get_page_from_freelist(gfp_mask, order, // 페이지 할당 시도
 					alloc_flags & ~ALLOC_NO_WATERMARKS, ac);
 
-	if (page) {
+	if (page) { // 할당이 성공한 경우
 		struct zone *zone = page_zone(page);
 
 		zone->compact_blockskip_flush = false;
-		compaction_defer_reset(zone, order, true);
+		compaction_defer_reset(zone, order, true); // zone 에서 compact 관련 값 reset
 		count_vm_event(COMPACTSUCCESS);
-		return page;
+		return page; // 할당한 page 리턴
 	}
 
 	/*
@@ -3075,9 +3078,9 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	 */
 	count_vm_event(COMPACTFAIL);
 
-	cond_resched();
+	cond_resched(); // 리스케줄링
 
-	return NULL;
+	return NULL; // 실패 케이스
 }
 #else
 static inline struct page *
@@ -3128,12 +3131,12 @@ __alloc_pages_direct_reclaim(gfp_t gfp_mask, unsigned int order,
 	struct page *page = NULL;
 	bool drained = false;
 
-	*did_some_progress = __perform_reclaim(gfp_mask, order, ac);
+	*did_some_progress = __perform_reclaim(gfp_mask, order, ac); // reclaim 진행
 	if (unlikely(!(*did_some_progress)))
 		return NULL;
 
 retry:
-	page = get_page_from_freelist(gfp_mask, order,
+	page = get_page_from_freelist(gfp_mask, order, // allocation 진행
 					alloc_flags & ~ALLOC_NO_WATERMARKS, ac);
 
 	/*
@@ -3164,7 +3167,11 @@ static void wake_all_kswapds(unsigned int order, const struct alloc_context *ac)
 static inline int
 gfp_to_alloc_flags(gfp_t gfp_mask)
 {
-	int alloc_flags = ALLOC_WMARK_MIN | ALLOC_CPUSET;
+	/**
+	 * @brief allocation 에서 사용할 gfp flag 값을 리턴한다.
+	 * @return gfp flag
+	 */
+	int alloc_flags = ALLOC_WMARK_MIN | ALLOC_CPUSET; 
 
 	/* __GFP_HIGH is assumed to be the same as ALLOC_HIGH to save a branch. */
 	BUILD_BUG_ON(__GFP_HIGH != (__force gfp_t) ALLOC_HIGH);
@@ -3177,7 +3184,7 @@ gfp_to_alloc_flags(gfp_t gfp_mask)
 	 */
 	alloc_flags |= (__force int) (gfp_mask & __GFP_HIGH);
 
-	if (gfp_mask & __GFP_ATOMIC) {
+	if (gfp_mask & __GFP_ATOMIC) { // Atomic 이 허용된 경우
 		/*
 		 * Not worth trying to allocate harder for __GFP_NOMEMALLOC even
 		 * if it can't schedule.
@@ -3223,7 +3230,10 @@ static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
 {
-	bool can_direct_reclaim = gfp_mask & __GFP_DIRECT_RECLAIM;
+	/**
+	 * @brief slowpath page allocation 진행
+	 */
+	bool can_direct_reclaim = gfp_mask & __GFP_DIRECT_RECLAIM; // Direct Reclaim 체크
 	struct page *page = NULL;
 	int alloc_flags;
 	unsigned long pages_reclaimed = 0;
@@ -3238,7 +3248,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	 * be using allocators in order of preference for an area that is
 	 * too large.
 	 */
-	if (order >= MAX_ORDER) {
+	if (order >= MAX_ORDER) { // order 가 MAX_ORDER 이상을 요구하는 경우 리턴 
 		WARN_ON_ONCE(!(gfp_mask & __GFP_NOWARN));
 		return NULL;
 	}
@@ -3247,54 +3257,55 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	 * We also sanity check to catch abuse of atomic reserves being used by
 	 * callers that are not in atomic context.
 	 */
-	if (WARN_ON_ONCE((gfp_mask & (__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)) ==
+	if (WARN_ON_ONCE((gfp_mask & (__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)) == // gfp mask 에서 GFP_ATOMIC, GFP_DIRECT_RECLAIM이 동시에 설정된 경우
 				(__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)))
-		gfp_mask &= ~__GFP_ATOMIC;
+		gfp_mask &= ~__GFP_ATOMIC; // GFP_ATOMIC을 제거
 
 retry:
-	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
-		wake_all_kswapds(order, ac);
+	if (gfp_mask & __GFP_KSWAPD_RECLAIM) // KSWPD_RECLAIM 플래그가 설정된 경우
+		wake_all_kswapds(order, ac); // kswapd 를 모두 깨운다. (kswapd는 cache 를 비우는 역할을 한다.0)
 
 	/*
 	 * OK, we're below the kswapd watermark and have kicked background
 	 * reclaim. Now things get more complex, so set up alloc_flags according
 	 * to how we want to proceed.
 	 */
-	alloc_flags = gfp_to_alloc_flags(gfp_mask);
+	alloc_flags = gfp_to_alloc_flags(gfp_mask); // TODO) 4-100
 
 	/*
 	 * Find the true preferred zone if the allocation is unconstrained by
 	 * cpusets.
 	 */
-	if (!(alloc_flags & ALLOC_CPUSET) && !ac->nodemask) {
+	if (!(alloc_flags & ALLOC_CPUSET) && !ac->nodemask) { // cpuset을 사용하지 못하면서 전체 노드에 대한 요청인 경우 권장 존과 인덱스를 다시 계산
 		struct zoneref *preferred_zoneref;
-		preferred_zoneref = first_zones_zonelist(ac->zonelist,
+		preferred_zoneref = first_zones_zonelist(ac->zonelist, // zonelist에서 할당 가능한 첫 번째 zoneref 리턴, ac->preferred_zone = zoneref->zone
 				ac->high_zoneidx, NULL, &ac->preferred_zone);
-		ac->classzone_idx = zonelist_zone_idx(preferred_zoneref);
+		ac->classzone_idx = zonelist_zone_idx(preferred_zoneref); // zoneref->idx
 	}
+// ... 4-97)
 
 	/* This is the last chance, in general, before the goto nopage. */
 	page = get_page_from_freelist(gfp_mask, order,
-				alloc_flags & ~ALLOC_NO_WATERMARKS, ac);
+				alloc_flags & ~ALLOC_NO_WATERMARKS, ac); // freelist에서 page를 할당
 	if (page)
 		goto got_pg;
 
 	/* Allocate without watermarks if the context allows */
-	if (alloc_flags & ALLOC_NO_WATERMARKS) {
+	if (alloc_flags & ALLOC_NO_WATERMARKS) { // Watermark 중 NO_WATERMARK 플래그가 설정된 경우 Watermark 없이 재시도
 		/*
 		 * Ignore mempolicies if ALLOC_NO_WATERMARKS on the grounds
 		 * the allocation is high priority and these type of
 		 * allocations are system rather than user orientated
 		 */
 		ac->zonelist = node_zonelist(numa_node_id(), gfp_mask);
-		page = get_page_from_freelist(gfp_mask, order,
+		page = get_page_from_freelist(gfp_mask, order, // 할당 재시도
 						ALLOC_NO_WATERMARKS, ac);
 		if (page)
 			goto got_pg;
 	}
 
 	/* Caller is not willing to reclaim, we can't balance anything */
-	if (!can_direct_reclaim) {
+	if (!can_direct_reclaim) { // directo_reclaim이 불가능한 경우
 		/*
 		 * All existing users of the __GFP_NOFAIL are blockable, so warn
 		 * of any new users that actually allow this type of allocation
@@ -3305,7 +3316,7 @@ retry:
 	}
 
 	/* Avoid recursion of direct reclaim */
-	if (current->flags & PF_MEMALLOC) {
+	if (current->flags & PF_MEMALLOC) { // reserved 영역도 사용을 해야하는 경우
 		/*
 		 * __GFP_NOFAIL request from this context is rather bizarre
 		 * because we cannot reclaim anything and only can loop waiting
@@ -3319,22 +3330,28 @@ retry:
 	}
 
 	/* Avoid allocations with no watermarks from looping endlessly */
-	if (test_thread_flag(TIF_MEMDIE) && !(gfp_mask & __GFP_NOFAIL))
-		goto nopage;
 
+	// test_threa
+	// 1. sp_el0 레지스터를 읽는다.
+	// 2. 읽어온 sp_el0 값을 struct thread_info 로 저장한다.
+	// 3. thread_info 에서 TIF_MEMDIE 플래그를 확인한다.
+	// 4. 해당 플래그가 설정된 경우 태스크가 죽은 것이므로 할당을 취소한다.
+	if (test_thread_flag(TIF_MEMDIE) && !(gfp_mask & __GFP_NOFAIL)) // 태스크가 정지중일 때 혹은, NO_FAIL 옵션이 설정된 경우
+		goto nopage;
+// ... 4-98) 
 	/*
 	 * Try direct compaction. The first pass is asynchronous. Subsequent
 	 * attempts after direct reclaim are synchronous
 	 */
-	page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags, ac,
+	page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags, ac, // direct_compact 할당 시도
 					migration_mode,
 					&contended_compaction,
 					&deferred_compaction);
-	if (page)
+	if (page) // 할당이 성공한 경우 return
 		goto got_pg;
 
 	/* Checks for THP-specific high-order allocations */
-	if (is_thp_gfp_mask(gfp_mask)) {
+	if (is_thp_gfp_mask(gfp_mask)) { // THP 할당이 요청된 경우 메모리가 부족하면 재빠르게 실행해야 하며, 실패 시에도 kswapd가 깨어나지 않아야 한다.
 		/*
 		 * If compaction is deferred for high-order allocations, it is
 		 * because sync compaction recently failed. If this is the case
@@ -3371,15 +3388,15 @@ retry:
 	 */
 	if (!is_thp_gfp_mask(gfp_mask) || (current->flags & PF_KTHREAD))
 		migration_mode = MIGRATE_SYNC_LIGHT;
-
+// ... 4-99)
 	/* Try direct reclaim and then allocating */
-	page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags, ac,
+	page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags, ac, // reclaim 진행 이후 allocation 진행
 							&did_some_progress);
 	if (page)
 		goto got_pg;
 
 	/* Do not loop if specifically requested */
-	if (gfp_mask & __GFP_NORETRY)
+	if (gfp_mask & __GFP_NORETRY) // noretry 인 경우 마지막 allocation 진행
 		goto noretry;
 
 	/* Keep reclaiming pages as long as there is reasonable progress */
@@ -3387,17 +3404,17 @@ retry:
 	if ((did_some_progress && order <= PAGE_ALLOC_COSTLY_ORDER) ||
 	    ((gfp_mask & __GFP_REPEAT) && pages_reclaimed < (1 << order))) {
 		/* Wait for some write requests to complete then retry */
-		wait_iff_congested(ac->preferred_zone, BLK_RW_ASYNC, HZ/50);
+		wait_iff_congested(ac->preferred_zone, BLK_RW_ASYNC, HZ/50); // 다른 프로세스에서 메모리 할당 해제될 수 있으니, 일정 시간 대기 이후 재시도
 		goto retry;
 	}
 
 	/* Reclaim has failed us, start killing things */
-	page = __alloc_pages_may_oom(gfp_mask, order, ac, &did_some_progress);
+	page = __alloc_pages_may_oom(gfp_mask, order, ac, &did_some_progress); // oom_killer 동작 이후 allocation 진행
 	if (page)
 		goto got_pg;
 
 	/* Retry as long as the OOM killer is making progress */
-	if (did_some_progress)
+	if (did_some_progress) // allocation 재시도를 한 것이 있을 경우 retry 진행
 		goto retry;
 
 noretry:
@@ -3406,7 +3423,7 @@ noretry:
 	 * direct reclaim and reclaim/compaction depends on compaction
 	 * being called after reclaim so call directly if necessary
 	 */
-	page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags,
+	page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags, // 마지막으로 allocation 시도
 					    ac, migration_mode,
 					    &contended_compaction,
 					    &deferred_compaction);
@@ -3482,7 +3499,7 @@ retry_cpuset:
 
 	/* First allocation attempt */
 	alloc_mask = gfp_mask|__GFP_HARDWALL; // GRP_HARDWALL : fastpath 할당 요청, 유저 태스크에서 할당 요청, Slab 할당 요청 (여기선 fastpath 할당 요청)
-	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac); // TODO) 4-90
+	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac); // fastpath allocation 진행
 	if (unlikely(!page)) {
 		/*
 		 * Runtime PM, block IO and its error handling path
@@ -3492,7 +3509,7 @@ retry_cpuset:
 		alloc_mask = memalloc_noio_flags(gfp_mask);
 		ac.spread_dirty_pages = false;
 
-		page = __alloc_pages_slowpath(alloc_mask, order, &ac);
+		page = __alloc_pages_slowpath(alloc_mask, order, &ac); // slowpath allocation 진행
 	}
 
 	if (kmemcheck_enabled && page)
