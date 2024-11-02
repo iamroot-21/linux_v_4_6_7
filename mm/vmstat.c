@@ -171,13 +171,13 @@ void refresh_zone_stat_thresholds(void)
 	int cpu;
 	int threshold;
 
-	for_each_populated_zone(zone) {
+	for_each_populated_zone(zone) {                                           // 모든 활성화된 zone 을 순회
 		unsigned long max_drift, tolerate_drift;
 
-		threshold = calculate_normal_threshold(zone);
+		threshold = calculate_normal_threshold(zone);                         // zone 의 managed_pages 와 활성화 cpu 에따라 임계값 획득
 
 		for_each_online_cpu(cpu)
-			per_cpu_ptr(zone->pageset, cpu)->stat_threshold
+			per_cpu_ptr(zone->pageset, cpu)->stat_threshold                   // 각 cpu 에 해당 zone 의 임계값을 설정
 							= threshold;
 
 		/*
@@ -185,10 +185,10 @@ void refresh_zone_stat_thresholds(void)
 		 * NR_FREE_PAGES reports the low watermark is ok when in fact
 		 * the min watermark could be breached by an allocation
 		 */
-		tolerate_drift = low_wmark_pages(zone) - min_wmark_pages(zone);
-		max_drift = num_online_cpus() * threshold;
-		if (max_drift > tolerate_drift)
-			zone->percpu_drift_mark = high_wmark_pages(zone) +
+		tolerate_drift = low_wmark_pages(zone) - min_wmark_pages(zone);       // 해당 zone 에서 일반적으로 사용 가능할 것 같은 값을 지정
+		max_drift = num_online_cpus() * threshold;                            // 모든 cpu 가 동시에 요청을 할때 처리되는 양
+		if (max_drift > tolerate_drift)                                       // 내가 처리할 수 있는 양보다 한번에 더 많은 양이 들어오면?
+			zone->percpu_drift_mark = high_wmark_pages(zone) +                // 좀더 정밀한 스탯으로 사용
 					max_drift;
 	}
 }
