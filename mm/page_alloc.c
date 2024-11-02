@@ -2613,14 +2613,17 @@ static bool __zone_watermark_ok(struct zone *z, unsigned int order,
 			unsigned long mark, int classzone_idx, int alloc_flags,
 			long free_pages)
 {
+	/**
+	 * @brief free page가 워터마크 값의 기준보다 충분한지 확인
+	 */
 	long min = mark;
 	int o;
-	const int alloc_harder = (alloc_flags & ALLOC_HARDER);
+	const int alloc_harder = (alloc_flags & ALLOC_HARDER); // ALLOC_HARDER 플래그 추출
 
 	/* free_pages may go negative - that's OK */
-	free_pages -= (1 << order) - 1;
+	free_pages -= (1 << order) - 1; // 2^n-1
 
-	if (alloc_flags & ALLOC_HIGH)
+	if (alloc_flags & ALLOC_HIGH) // 우선 순위가 높으므로 watermark min값 축소
 		min -= min / 2;
 
 	/*
@@ -2629,26 +2632,26 @@ static bool __zone_watermark_ok(struct zone *z, unsigned int order,
 	 * atomic reserve but it avoids a search.
 	 */
 	if (likely(!alloc_harder))
-		free_pages -= z->nr_reserved_highatomic;
+		free_pages -= z->nr_reserved_highatomic; // alloc_harder가 아닌 경우, 전체 free_page 에서 highatomic 개수를 뺀다. 
 	else
-		min -= min / 4;
+		min -= min / 4; // 최소 워터마크 값 감소
 
 #ifdef CONFIG_CMA
 	/* If allocation can't use CMA areas don't use free CMA pages */
-	if (!(alloc_flags & ALLOC_CMA))
-		free_pages -= zone_page_state(z, NR_FREE_CMA_PAGES);
+	if (!(alloc_flags & ALLOC_CMA)) // CMA 플래그가 없는 경우
+		free_pages -= zone_page_state(z, NR_FREE_CMA_PAGES); // 전체 freepage 에서 cma freepage 개수를 뺀다.
 #endif
-
+// ... 4-102
 	/*
 	 * Check watermarks for an order-0 allocation request. If these
 	 * are not met, then a high-order request also cannot go ahead
 	 * even if a suitable page happened to be free.
 	 */
-	if (free_pages <= min + z->lowmem_reserve[classzone_idx])
+	if (free_pages <= min + z->lowmem_reserve[classzone_idx]) // lowmem 개수보다 freepage가 적은 경우 NG
 		return false;
 
 	/* If this is an order-0 request then the watermark is fine */
-	if (!order)
+	if (!order) // order 가 0인 경우 OK
 		return true;
 
 	/* For a high-order request, check at least one suitable page is free */
@@ -2656,25 +2659,25 @@ static bool __zone_watermark_ok(struct zone *z, unsigned int order,
 		struct free_area *area = &z->free_area[o];
 		int mt;
 
-		if (!area->nr_free)
+		if (!area->nr_free) // 할당이 안되있는 경우 continue
 			continue;
 
-		if (alloc_harder)
+		if (alloc_harder) // alloc harder인 경우 nr_free가 존재하는 것만으로 패스
 			return true;
 
 		for (mt = 0; mt < MIGRATE_PCPTYPES; mt++) {
-			if (!list_empty(&area->free_list[mt]))
+			if (!list_empty(&area->free_list[mt])) // list가 등록되어 있는 경우 OK
 				return true;
 		}
 
 #ifdef CONFIG_CMA
 		if ((alloc_flags & ALLOC_CMA) &&
-		    !list_empty(&area->free_list[MIGRATE_CMA])) {
+		    !list_empty(&area->free_list[MIGRATE_CMA])) { // CMA free_list가 있는 경우 OK
 			return true;
 		}
 #endif
 	}
-	return false;
+	return false; // 모든 조건을 불충족할 경우 NG 
 }
 
 bool zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
@@ -6565,15 +6568,19 @@ static void calculate_totalreserve_pages(void)
  */
 static void setup_per_zone_lowmem_reserve(void)
 {
+	/*
+	* @brief 각 존의 lowmem_reserve 값을 계산해서 업데이트
+	* @details managed_pages 비율에 따라서 lowmem_reserve 값이 변경 
+	*/
 	struct pglist_data *pgdat;
 	enum zone_type j, idx;
 
-	for_each_online_pgdat(pgdat) {
-		for (j = 0; j < MAX_NR_ZONES; j++) {
-			struct zone *zone = pgdat->node_zones + j;
+	for_each_online_pgdat(pgdat) { // pgdat 마다 루프
+		for (j = 0; j < MAX_NR_ZONES; j++) { // zone 개수만큼 루프
+			struct zone *zone = pgdat->node_zones + j; // zone = &pgdat->node_zones[j];
 			unsigned long managed_pages = zone->managed_pages;
 
-			zone->lowmem_reserve[j] = 0;
+			zone->lowmem_reserve[j] = 0; // 값을 쓰기 전에 0으로 초기화
 
 			idx = j;
 			while (idx) {
@@ -6584,10 +6591,10 @@ static void setup_per_zone_lowmem_reserve(void)
 				if (sysctl_lowmem_reserve_ratio[idx] < 1)
 					sysctl_lowmem_reserve_ratio[idx] = 1;
 
-				lower_zone = pgdat->node_zones + idx;
+				lower_zone = pgdat->node_zones + idx; // lower_zone = pgdat->node_zones[idx];
 				lower_zone->lowmem_reserve[j] = managed_pages /
-					sysctl_lowmem_reserve_ratio[idx];
-				managed_pages += lower_zone->managed_pages;
+					sysctl_lowmem_reserve_ratio[idx]; // calculate_totalreserve_pages 에서 사용할 lowmem_reserve 값을 계산
+				managed_pages += lower_zone->managed_pages; // managed_pages 업데이트
 			}
 		}
 	}
@@ -6748,23 +6755,23 @@ int __meminit init_per_zone_wmark_min(void)
 	unsigned long lowmem_kbytes;
 	int new_min_free_kbytes;
 
-	lowmem_kbytes = nr_free_buffer_pages() * (PAGE_SIZE >> 10);
-	new_min_free_kbytes = int_sqrt(lowmem_kbytes * 16);
+	lowmem_kbytes = nr_free_buffer_pages() * (PAGE_SIZE >> 10); // freepage를 KByte로 변환
+	new_min_free_kbytes = int_sqrt(lowmem_kbytes * 16); // (lowmem_kbyes * 16)^1/2
 
-	if (new_min_free_kbytes > user_min_free_kbytes) {
+	if (new_min_free_kbytes > user_min_free_kbytes) { // 유저 입력 min 값 validation 진행 128 < mmin_free_kbytes < 65536
 		min_free_kbytes = new_min_free_kbytes;
-		if (min_free_kbytes < 128)
+		if (min_free_kbytes < 128) // min
 			min_free_kbytes = 128;
-		if (min_free_kbytes > 65536)
+		if (min_free_kbytes > 65536) // max
 			min_free_kbytes = 65536;
 	} else {
 		pr_warn("min_free_kbytes is not updated to %d because user defined value %d is preferred\n",
 				new_min_free_kbytes, user_min_free_kbytes);
 	}
-	setup_per_zone_wmarks();
-	refresh_zone_stat_thresholds();
-	setup_per_zone_lowmem_reserve();
-	setup_per_zone_inactive_ratio();
+	setup_per_zone_wmarks(); // TODO 4-104
+	refresh_zone_stat_thresholds(); // TODO 4-106
+	setup_per_zone_lowmem_reserve(); // TODO 4-108
+	setup_per_zone_inactive_ratio(); // 책 409p
 	return 0;
 }
 core_initcall(init_per_zone_wmark_min)

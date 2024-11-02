@@ -301,6 +301,9 @@ struct kmem_cache *find_mergeable(size_t size, size_t align,
 unsigned long calculate_alignment(unsigned long flags,
 		unsigned long align, unsigned long size)
 {
+	/**
+	 * @brief 입력한 size, align 값에 따라 최종적으로 사용할 align 값을 구한다.
+	 */
 	/*
 	 * If the user wants hardware cache aligned objects then follow that
 	 * suggestion if the object is sufficiently large.
@@ -308,17 +311,17 @@ unsigned long calculate_alignment(unsigned long flags,
 	 * The hardware cache alignment cannot override the specified
 	 * alignment though. If that is greater then use it.
 	 */
-	if (flags & SLAB_HWCACHE_ALIGN) {
+	if (flags & SLAB_HWCACHE_ALIGN) { // 하드웨어 정렬 요청이 있는 경우
 		unsigned long ralign = cache_line_size();
-		while (size <= ralign / 2)
+		while (size <= ralign / 2) // size보다 큰 2의 제곱수를 구한다.
 			ralign /= 2;
-		align = max(align, ralign);
+		align = max(align, ralign); // 요청한 size보다 큰 2의 제곱수로 align 값을 정한다.
 	}
 
-	if (align < ARCH_SLAB_MINALIGN)
+	if (align < ARCH_SLAB_MINALIGN) // align 값이 Arm64에서 지정한 최소 값보다 작지 않도록 변경
 		align = ARCH_SLAB_MINALIGN;
 
-	return ALIGN(align, sizeof(void *));
+	return ALIGN(align, sizeof(void *)); // 지정한 align 값 리턴
 }
 
 static struct kmem_cache *create_cache(const char *name,
@@ -774,17 +777,17 @@ void __init create_boot_cache(struct kmem_cache *s, const char *name, size_t siz
 
 	s->name = name;
 	s->size = s->object_size = size;
-	s->align = calculate_alignment(flags, ARCH_KMALLOC_MINALIGN, size);
+	s->align = calculate_alignment(flags, ARCH_KMALLOC_MINALIGN, size); // align 값 계산
 
-	slab_init_memcg_params(s);
+	slab_init_memcg_params(s); // s->memcg_param 값을 초기화
 
-	err = __kmem_cache_create(s, flags);
+	err = __kmem_cache_create(s, flags); // kmem 캐시 생성
 
 	if (err)
 		panic("Creation of kmalloc slab %s size=%zu failed. Reason %d\n",
 					name, size, err);
 
-	s->refcount = -1;	/* Exempt from merging for now */
+	s->refcount = -1;	/* Exempt from merging for now */ // 참조 카운터는 추후 업데이트
 }
 
 struct kmem_cache *__init create_kmalloc_cache(const char *name, size_t size,
@@ -917,17 +920,17 @@ void __init setup_kmalloc_cache_index_table(void)
 	int i;
 
 	BUILD_BUG_ON(KMALLOC_MIN_SIZE > 256 ||
-		(KMALLOC_MIN_SIZE & (KMALLOC_MIN_SIZE - 1)));
+		(KMALLOC_MIN_SIZE & (KMALLOC_MIN_SIZE - 1))); // KMALLOC MIN SIZE가 L1 Cache Size 보다 클 경우 Build error
 
-	for (i = 8; i < KMALLOC_MIN_SIZE; i += 8) {
-		int elem = size_index_elem(i);
+	for (i = 8; i < KMALLOC_MIN_SIZE; i += 8) { // 1 byte 단위 계산
+		int elem = size_index_elem(i); // size index 값 계산
 
-		if (elem >= ARRAY_SIZE(size_index))
+		if (elem >= ARRAY_SIZE(size_index)) // out_of_range 방지
 			break;
-		size_index[elem] = KMALLOC_SHIFT_LOW;
+		size_index[elem] = KMALLOC_SHIFT_LOW; // log2(L1 cache)
 	}
 
-	if (KMALLOC_MIN_SIZE >= 64) {
+	if (KMALLOC_MIN_SIZE >= 64) { // MIN_SIZE가 64이상인 경우 cache 최적화에서 96byte 지원이 필요 없음
 		/*
 		 * The 96 byte size cache is not used if the alignment
 		 * is 64 byte.

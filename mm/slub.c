@@ -3881,31 +3881,34 @@ static struct notifier_block slab_memory_callback_nb = {
 
 static struct kmem_cache * __init bootstrap(struct kmem_cache *static_cache)
 {
+	/**
+	 * @brief 부트업 캐시 정보를 복사하여 정식 kmem cache로 구성
+	 */
 	int node;
-	struct kmem_cache *s = kmem_cache_zalloc(kmem_cache, GFP_NOWAIT);
+	struct kmem_cache *s = kmem_cache_zalloc(kmem_cache, GFP_NOWAIT); // static 변수로 임시할당 받은 데이터를 실제 cache 캐시에 할당 받음
 	struct kmem_cache_node *n;
 
-	memcpy(s, static_cache, kmem_cache->object_size);
+	memcpy(s, static_cache, kmem_cache->object_size); // static_cache 내용을 할당받은 cache로 카피
 
 	/*
 	 * This runs very early, and only the boot processor is supposed to be
 	 * up.  Even if it weren't true, IRQs are not up so we couldn't fire
 	 * IPIs around.
 	 */
-	__flush_cpu_slab(s, smp_processor_id());
+	__flush_cpu_slab(s, smp_processor_id()); // cpu slab flush
 	for_each_kmem_cache_node(s, node, n) {
 		struct page *p;
 
 		list_for_each_entry(p, &n->partial, lru)
-			p->slab_cache = s;
+			p->slab_cache = s; // 각 cache의 node 마다 slab_cache 값을 할당받은 cache 값으로 변경
 
 #ifdef CONFIG_SLUB_DEBUG
 		list_for_each_entry(p, &n->full, lru)
 			p->slab_cache = s;
 #endif
 	}
-	slab_init_memcg_params(s);
-	list_add(&s->list, &slab_caches);
+	slab_init_memcg_params(s); // memcg param 초기화
+	list_add(&s->list, &slab_caches); // slab_cache 리스트에 s->list 추가
 	return s;
 }
 
@@ -3920,34 +3923,34 @@ void __init kmem_cache_init(void)
 	kmem_cache_node = &boot_kmem_cache_node;
 	kmem_cache = &boot_kmem_cache;
 
-	create_boot_cache(kmem_cache_node, "kmem_cache_node",
+	create_boot_cache(kmem_cache_node, "kmem_cache_node", // cache에 kmem_cache_node 할당
 		sizeof(struct kmem_cache_node), SLAB_HWCACHE_ALIGN);
 
-	register_hotmemory_notifier(&slab_memory_callback_nb);
+	register_hotmemory_notifier(&slab_memory_callback_nb); // hotmemory notifier 등록
 
 	/* Able to allocate the per node structures */
 	slab_state = PARTIAL;
 
-	create_boot_cache(kmem_cache, "kmem_cache",
+	create_boot_cache(kmem_cache, "kmem_cache", // cache에 kmem_cache 할당
 			offsetof(struct kmem_cache, node) +
 				nr_node_ids * sizeof(struct kmem_cache_node *),
 		       SLAB_HWCACHE_ALIGN);
 
-	kmem_cache = bootstrap(&boot_kmem_cache);
+	kmem_cache = bootstrap(&boot_kmem_cache); // TODO 4-112)
 
 	/*
 	 * Allocate kmem_cache_node properly from the kmem_cache slab.
 	 * kmem_cache_node is separately allocated so no need to
 	 * update any list pointers.
 	 */
-	kmem_cache_node = bootstrap(&boot_kmem_cache_node);
+	kmem_cache_node = bootstrap(&boot_kmem_cache_node); //TODO 4-112)
 
 	/* Now we can use the kmem_cache to allocate kmalloc slabs */
-	setup_kmalloc_cache_index_table();
-	create_kmalloc_caches(0);
+	setup_kmalloc_cache_index_table(); // 4-113)
+	create_kmalloc_caches(0); // TODO 4-114)
 
 #ifdef CONFIG_SMP
-	register_cpu_notifier(&slab_notifier);
+	register_cpu_notifier(&slab_notifier); // cpu notifier 등록
 #endif
 
 	pr_info("SLUB: HWalign=%d, Order=%d-%d, MinObjects=%d, CPUs=%d, Nodes=%d\n",
@@ -3992,6 +3995,11 @@ __kmem_cache_alias(const char *name, size_t size, size_t align,
 	return s;
 }
 
+/**
+ * @brief kmem cache 할당
+ * @param[in,out] s kmem_cache 구조체
+ * @param[in] flags cache flag
+ */
 int __kmem_cache_create(struct kmem_cache *s, unsigned long flags)
 {
 	int err;
