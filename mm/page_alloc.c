@@ -6532,29 +6532,29 @@ static void calculate_totalreserve_pages(void)
 	unsigned long reserve_pages = 0;
 	enum zone_type i, j;
 
-	for_each_online_pgdat(pgdat) {
-		for (i = 0; i < MAX_NR_ZONES; i++) {
+	for_each_online_pgdat(pgdat) {                                      // 모든 활성화된 node 를 순회
+		for (i = 0; i < MAX_NR_ZONES; i++) {                            // node 별로 전체 zone 을 순회
 			struct zone *zone = pgdat->node_zones + i;
 			long max = 0;
 
 			/* Find valid and maximum lowmem_reserve in the zone */
 			for (j = i; j < MAX_NR_ZONES; j++) {
-				if (zone->lowmem_reserve[j] > max)
-					max = zone->lowmem_reserve[j];
+				if (zone->lowmem_reserve[j] > max)                      // 존별로 미리 예약되어있는 lowmem
+					max = zone->lowmem_reserve[j];                      // 중에서 가장 큰값을 max 에 설정
 			}
 
 			/* we treat the high watermark as reserved pages. */
-			max += high_wmark_pages(zone);
+			max += high_wmark_pages(zone);                              // water mark high 로 설정된 값을 더함
 
-			if (max > zone->managed_pages)
+			if (max > zone->managed_pages)                              // reserved pages 의 max 값을 managed_pages 로 제한
 				max = zone->managed_pages;
 
-			zone->totalreserve_pages = max;
+			zone->totalreserve_pages = max;                             // 존의 totalreserve_pages 를 설정
 
 			reserve_pages += max;
 		}
 	}
-	totalreserve_pages = reserve_pages;
+	totalreserve_pages = reserve_pages;                                 // 모든 노드 & 모든 존의 reserved pages 를 계산
 }
 
 /*
@@ -6598,15 +6598,16 @@ static void setup_per_zone_lowmem_reserve(void)
 
 static void __setup_per_zone_wmarks(void)
 {
-	unsigned long pages_min = min_free_kbytes >> (PAGE_SHIFT - 10);
+	unsigned long pages_min = min_free_kbytes >> (PAGE_SHIFT - 10); // free kbytes 를 page 수로 변환
 	unsigned long lowmem_pages = 0;
 	struct zone *zone;
 	unsigned long flags;
 
 	/* Calculate total number of !ZONE_HIGHMEM pages */
 	for_each_zone(zone) {
-		if (!is_highmem(zone))
-			lowmem_pages += zone->managed_pages;
+		if (!is_highmem(zone))                                      // highmem zone 이 아닌 경우에
+			lowmem_pages += zone->managed_pages;                    // zone 의 magnaged_pages 를 누적 합
+			                                                        // lowmem_pages 가 여러 존의 managed_pages 의 합
 	}
 
 	for_each_zone(zone) {
@@ -6614,7 +6615,7 @@ static void __setup_per_zone_wmarks(void)
 
 		spin_lock_irqsave(&zone->lock, flags);
 		tmp = (u64)pages_min * zone->managed_pages;
-		do_div(tmp, lowmem_pages);
+		do_div(tmp, lowmem_pages);                                  // 페이지수 * (내 존의 managed page / 전체 managed page)
 		if (is_highmem(zone)) {
 			/*
 			 * __GFP_HIGH and PF_MEMALLOC allocations usually don't
@@ -6628,14 +6629,14 @@ static void __setup_per_zone_wmarks(void)
 			unsigned long min_pages;
 
 			min_pages = zone->managed_pages / 1024;
-			min_pages = clamp(min_pages, SWAP_CLUSTER_MAX, 128UL);
-			zone->watermark[WMARK_MIN] = min_pages;
+			min_pages = clamp(min_pages, SWAP_CLUSTER_MAX, 128UL);  // highmem 인 경우는 비율에 따라 처리하지 않고
+			zone->watermark[WMARK_MIN] = min_pages;                 // 아주 작게 watermark min 을 설정하겠다.
 		} else {
 			/*
 			 * If it's a lowmem zone, reserve a number of pages
 			 * proportionate to the zone's size.
 			 */
-			zone->watermark[WMARK_MIN] = tmp;
+			zone->watermark[WMARK_MIN] = tmp;                       // highmem 이 아닌 경우는 비율에 따라 min 을 설정한다.
 		}
 
 		/*
@@ -6643,16 +6644,16 @@ static void __setup_per_zone_wmarks(void)
 		 * scale factor in proportion to available memory, but
 		 * ensure a minimum size on small systems.
 		 */
-		tmp = max_t(u64, tmp >> 2,
-			    mult_frac(zone->managed_pages,
-				      watermark_scale_factor, 10000));
+		tmp = max_t(u64, tmp >> 2,                                  // >> 2 : 25% 만큼 가져오겠다.
+			    mult_frac(zone->managed_pages,                      // 워터마크로 해당 존에서 사용할 비율을 정한다.
+				      watermark_scale_factor, 10000));              // 위 두개의 max 값으로 tmp 를 결정
 
-		zone->watermark[WMARK_LOW]  = min_wmark_pages(zone) + tmp;
+		zone->watermark[WMARK_LOW]  = min_wmark_pages(zone) + tmp;     // low, high 를 min 에서 부터 tmp 를 더한만큼으로 지정
 		zone->watermark[WMARK_HIGH] = min_wmark_pages(zone) + tmp * 2;
 
 		__mod_zone_page_state(zone, NR_ALLOC_BATCH,
 			high_wmark_pages(zone) - low_wmark_pages(zone) -
-			atomic_long_read(&zone->vm_stat[NR_ALLOC_BATCH]));
+			atomic_long_read(&zone->vm_stat[NR_ALLOC_BATCH]));     // watermark high~low 의 diff 스탯을 저장한다.
 
 		spin_unlock_irqrestore(&zone->lock, flags);
 	}
