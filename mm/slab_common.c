@@ -232,19 +232,25 @@ static inline void destroy_memcg_params(struct kmem_cache *s)
  */
 int slab_unmergeable(struct kmem_cache *s)
 {
-	if (slab_nomerge || (s->flags & SLAB_NEVER_MERGE))
+	/**
+	 * @brief unmergeable 인지 확인
+	 * @return
+	 *  1 - unmergeable
+	 *  0 - mergeable
+	 */
+	if (slab_nomerge || (s->flags & SLAB_NEVER_MERGE)) // no merge 인 경우
 		return 1;
 
-	if (!is_root_cache(s))
+	if (!is_root_cache(s))  // root cache인 경우
 		return 1;
 
-	if (s->ctor)
+	if (s->ctor) // 객체 생성자 함수가 있는 경우
 		return 1;
 
 	/*
 	 * We may have set a slab to be unmergeable during bootstrap.
 	 */
-	if (s->refcount < 0)
+	if (s->refcount < 0) // ref count 가 0 이하인 경우 (bootstrap 에서 unmergeable로 설정한 경우)
 		return 1;
 
 	return 0;
@@ -253,43 +259,49 @@ int slab_unmergeable(struct kmem_cache *s)
 struct kmem_cache *find_mergeable(size_t size, size_t align,
 		unsigned long flags, const char *name, void (*ctor)(void *))
 {
+	/**
+	 * @brief list 를 순회하면서 merge 가능한 kmem_cache를 찾는다.
+	 * @return
+	 *  &kmem_cache - mergeable kmem_cache가 있는 경우
+	 *  null - mergeable kmem_cache가 없는 경우
+	 */
 	struct kmem_cache *s;
 
-	if (slab_nomerge || (flags & SLAB_NEVER_MERGE))
+	if (slab_nomerge || (flags & SLAB_NEVER_MERGE)) // nomerge 플래그가 있는 경우
 		return NULL;
 
-	if (ctor)
+	if (ctor) // constructor가 있는 경우 
 		return NULL;
 
-	size = ALIGN(size, sizeof(void *));
-	align = calculate_alignment(flags, align, size);
-	size = ALIGN(size, align);
+	size = ALIGN(size, sizeof(void *)); // WORD 단위로 size 값을 정렬 (size를 8의 배수로 만듦)
+	align = calculate_alignment(flags, align, size); // size, align 값으로 실제 사용할 align 값을 계산
+	size = ALIGN(size, align); // 실제로 사용할 size 값 계산
 	flags = kmem_cache_flags(size, flags, name, NULL);
 
-	list_for_each_entry_reverse(s, &slab_caches, list) {
-		if (slab_unmergeable(s))
+	list_for_each_entry_reverse(s, &slab_caches, list) { // list 역순으로 순회
+		if (slab_unmergeable(s)) // mergeable 체크
 			continue;
 
-		if (size > s->size)
+		if (size > s->size) // 사이즈 체크
 			continue;
 
-		if ((flags & SLAB_MERGE_SAME) != (s->flags & SLAB_MERGE_SAME))
+		if ((flags & SLAB_MERGE_SAME) != (s->flags & SLAB_MERGE_SAME)) // SLAB_MERGE_SAME flag가 동일하게 있는 경우
 			continue;
 		/*
 		 * Check if alignment is compatible.
 		 * Courtesy of Adrian Drzewiecki
 		 */
-		if ((s->size & ~(align - 1)) != s->size)
+		if ((s->size & ~(align - 1)) != s->size) // cache 크기가 재조정된 align 단위로 정렬이 되지 않는 경우
 			continue;
 
-		if (s->size - size >= sizeof(void *))
+		if (s->size - size >= sizeof(void *)) // 재조정한 size 값이 align 되지 않는 경우
 			continue;
 
-		if (IS_ENABLED(CONFIG_SLAB) && align &&
+		if (IS_ENABLED(CONFIG_SLAB) && align && // SLAB 옵션을 사용 중일 경우, 재조정된 align 값이 캐시의 align 값 보다 큰 경우
 			(align > s->align || s->align % align))
 			continue;
 
-		return s;
+		return s; // 모든 조건이 충족되는 경우 해당 kmem_cache 리턴
 	}
 	return NULL;
 }
@@ -329,14 +341,21 @@ static struct kmem_cache *create_cache(const char *name,
 		unsigned long flags, void (*ctor)(void *),
 		struct mem_cgroup *memcg, struct kmem_cache *root_cache)
 {
+	/**
+	 * @brief kmem_cache를 할당받아 slab_caches에 추가함
+	 * @return
+	 *  &kmem_cache - Pass
+	 *  ErrorPointer - Fail
+	 */
 	struct kmem_cache *s;
 	int err;
 
 	err = -ENOMEM;
-	s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL);
+	s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL); // kmem_cache 객체 할당
 	if (!s)
 		goto out;
 
+	// 값 입력
 	s->name = name;
 	s->object_size = object_size;
 	s->size = size;
@@ -347,20 +366,20 @@ static struct kmem_cache *create_cache(const char *name,
 	if (err)
 		goto out_free_cache;
 
-	err = __kmem_cache_create(s, flags);
+	err = __kmem_cache_create(s, flags); // TODO) 4-121
 	if (err)
 		goto out_free_cache;
 
-	s->refcount = 1;
-	list_add(&s->list, &slab_caches);
+	s->refcount = 1; // 참조 카운트 업데이트
+	list_add(&s->list, &slab_caches); // slab_caches 에 s->list 추가
 out:
 	if (err)
 		return ERR_PTR(err);
 	return s;
 
 out_free_cache:
-	destroy_memcg_params(s);
-	kmem_cache_free(kmem_cache, s);
+	destroy_memcg_params(s); // 입력했던 s 를 제거
+	kmem_cache_free(kmem_cache, s); // 입력했던 s 를 제거
 	goto out;
 }
 
@@ -396,15 +415,15 @@ kmem_cache_create(const char *name, size_t size, size_t align,
 	const char *cache_name;
 	int err;
 
-	get_online_cpus();
-	get_online_mems();
-	memcg_get_cache_ids();
+	get_online_cpus(); // Hot plug 인 경우, cpu 동기화 대기
+	get_online_mems(); // Hot plug 인 경우, mem 동기화 대기
+	memcg_get_cache_ids(); // memcg rw 세마포어 동기화를 시작
 
-	mutex_lock(&slab_mutex);
+	mutex_lock(&slab_mutex); // mutex lock
 
-	err = kmem_cache_sanity_check(name, size);
+	err = kmem_cache_sanity_check(name, size); // DEBUG 옵션이 켜진 경우 cache name, size 체킹 수행
 	if (err) {
-		goto out_unlock;
+		goto out_unlock; // err 발생한 경우 unlock 이후 return
 	}
 
 	/*
@@ -413,32 +432,33 @@ kmem_cache_create(const char *name, size_t size, size_t align,
 	 * case, and we'll just provide them with a sanitized version of the
 	 * passed flags.
 	 */
-	flags &= CACHE_CREATE_MASK;
+	flags &= CACHE_CREATE_MASK; // create_mask 만 남겨둠
 
-	s = __kmem_cache_alias(name, size, align, flags, ctor);
-	if (s)
+	s = __kmem_cache_alias(name, size, align, flags, ctor); // cache에서 mergeable cache를 사용
+	if (s) // 할당이 성공한 경우, 종료
 		goto out_unlock;
 
-	cache_name = kstrdup_const(name, GFP_KERNEL);
+	cache_name = kstrdup_const(name, GFP_KERNEL); // cache name을 복사함
 	if (!cache_name) {
 		err = -ENOMEM;
 		goto out_unlock;
 	}
 
-	s = create_cache(cache_name, size, size,
-			 calculate_alignment(flags, align, size),
+	s = create_cache(cache_name, size, size, // TODO 4-120)
+			 calculate_alignment(flags, align, size), // size, align 값에 맞춰서 최종적으로 사용할 align 값을 가져옴
 			 flags, ctor, NULL, NULL);
 	if (IS_ERR(s)) {
 		err = PTR_ERR(s);
 		kfree_const(cache_name);
 	}
 
+// mutex unlock 및 동기화 시퀀스 진행
 out_unlock:
-	mutex_unlock(&slab_mutex);
+	mutex_unlock(&slab_mutex); // mutex unlock
 
-	memcg_put_cache_ids();
-	put_online_mems();
-	put_online_cpus();
+	memcg_put_cache_ids(); // memcg sync
+	put_online_mems(); // memory sync
+	put_online_cpus(); // cpu sync
 
 	if (err) {
 		if (flags & SLAB_PANIC)
@@ -451,7 +471,7 @@ out_unlock:
 		}
 		return NULL;
 	}
-	return s;
+	return s; // 할당받은 kmem_cache 리턴
 }
 EXPORT_SYMBOL(kmem_cache_create);
 
@@ -793,14 +813,14 @@ void __init create_boot_cache(struct kmem_cache *s, const char *name, size_t siz
 struct kmem_cache *__init create_kmalloc_cache(const char *name, size_t size,
 				unsigned long flags)
 {
-	struct kmem_cache *s = kmem_cache_zalloc(kmem_cache, GFP_NOWAIT);
+	struct kmem_cache *s = kmem_cache_zalloc(kmem_cache, GFP_NOWAIT); // slab 객체를 kmem_cache에서 받아옴
 
 	if (!s)
 		panic("Out of memory when creating slab %s\n", name);
 
-	create_boot_cache(s, name, size, flags);
-	list_add(&s->list, &slab_caches);
-	s->refcount = 1;
+	create_boot_cache(s, name, size, flags); // cpu cache를 per-cpu 자료형으로 할당 받음
+	list_add(&s->list, &slab_caches); // slab_caches list에 추가
+	s->refcount = 1; // refcount 추가
 	return s;
 }
 
@@ -922,7 +942,7 @@ void __init setup_kmalloc_cache_index_table(void)
 	BUILD_BUG_ON(KMALLOC_MIN_SIZE > 256 ||
 		(KMALLOC_MIN_SIZE & (KMALLOC_MIN_SIZE - 1))); // KMALLOC MIN SIZE가 L1 Cache Size 보다 클 경우 Build error
 
-	for (i = 8; i < KMALLOC_MIN_SIZE; i += 8) { // 1 byte 단위 계산
+	for (i = 8; i < KMALLOC_MIN_SIZE; i += 8) { // 8 byte 단위 계산
 		int elem = size_index_elem(i); // size index 값 계산
 
 		if (elem >= ARRAY_SIZE(size_index)) // out_of_range 방지
@@ -930,7 +950,7 @@ void __init setup_kmalloc_cache_index_table(void)
 		size_index[elem] = KMALLOC_SHIFT_LOW; // log2(L1 cache)
 	}
 
-	if (KMALLOC_MIN_SIZE >= 64) { // MIN_SIZE가 64이상인 경우 cache 최적화에서 96byte 지원이 필요 없음
+	if (KMALLOC_MIN_SIZE >= 64) { // MIN_SIZE가 64byte 이상인 경우 cache 최적화에서 96byte 지원이 필요 없음
 		/*
 		 * The 96 byte size cache is not used if the alignment
 		 * is 64 byte.
@@ -940,7 +960,7 @@ void __init setup_kmalloc_cache_index_table(void)
 
 	}
 
-	if (KMALLOC_MIN_SIZE >= 128) {
+	if (KMALLOC_MIN_SIZE >= 128) { // MIN_SIZE가 128byte 이상인 경우 cache 최적화에서 192byte 지원이 필요 없음
 		/*
 		 * The 192 byte sized cache is not used if the alignment
 		 * is 128 byte. Redirect kmalloc to use the 256 byte cache
@@ -967,7 +987,7 @@ void __init create_kmalloc_caches(unsigned long flags)
 	int i;
 
 	for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++) {
-		if (!kmalloc_caches[i])
+		if (!kmalloc_caches[i]) // cache 할당이 안되어 있을 경우 할당
 			new_kmalloc_cache(i, flags);
 
 		/*

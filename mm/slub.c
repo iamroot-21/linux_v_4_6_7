@@ -132,7 +132,7 @@ static inline void *fixup_red_left(struct kmem_cache *s, void *p)
 	return p;
 }
 
-static inline bool kmem_cache_has_cpu_partial(struct kmem_cache *s)
+static inline bool kmem_cache_has_cpu_partial (struct kmem_cache *s)
 {
 #ifdef CONFIG_SLUB_CPU_PARTIAL
 	return !kmem_cache_debug(s);
@@ -1509,7 +1509,7 @@ static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 	}
 
 	return allocate_slab(s,
-		flags & (GFP_RECLAIM_MASK | GFP_CONSTRAINT_MASK), node);
+		flags & (GFP_RECLAIM_MASK | GFP_CONSTRAINT_MASK), node); // TODO 4-126)
 }
 
 static void __free_slab(struct kmem_cache *s, struct page *page)
@@ -3159,39 +3159,44 @@ static struct kmem_cache *kmem_cache_node;
  */
 static void early_kmem_cache_node_alloc(int node)
 {
+	/**
+	 * @brief kmem_cache_node 를 할당받음
+	 * @param[in] node node 번호
+	 */
 	struct page *page;
 	struct kmem_cache_node *n;
 
-	BUG_ON(kmem_cache_node->size < sizeof(struct kmem_cache_node));
+	BUG_ON(kmem_cache_node->size < sizeof(struct kmem_cache_node)); // kmem_cache_node보다 사이즈가 적은 경우 에러 처리
 
-	page = new_slab(kmem_cache_node, GFP_NOWAIT, node);
+	page = new_slab(kmem_cache_node, GFP_NOWAIT, node); // TODO 4-125)
 
-	BUG_ON(!page);
-	if (page_to_nid(page) != node) {
+	BUG_ON(!page); // 할당 실패한 겨우 에러 처리
+	if (page_to_nid(page) != node) { // 할당받은 슬랩 페이지가 지정된 노드와 다른지 확인
 		pr_err("SLUB: Unable to allocate memory from node %d\n", node);
 		pr_err("SLUB: Allocating a useless per node structure in order to be able to continue\n");
 	}
 
-	n = page->freelist;
+	n = page->freelist; // page->freelist 저장
 	BUG_ON(!n);
-	page->freelist = get_freepointer(kmem_cache_node, n);
+	page->freelist = get_freepointer(kmem_cache_node, n); //page->freelist가 다음 노드를 가리키도록 입력, page->freelist = page->freelist.next()
 	page->inuse = 1;
 	page->frozen = 0;
-	kmem_cache_node->node[node] = n;
+	kmem_cache_node->node[node] = n; // kmem_cache_node->node[node] = page->freelist
 #ifdef CONFIG_SLUB_DEBUG
 	init_object(kmem_cache_node, n, SLUB_RED_ACTIVE);
 	init_tracking(kmem_cache_node, n);
 #endif
-	kasan_kmalloc(kmem_cache_node, n, sizeof(struct kmem_cache_node),
+	kasan_kmalloc(kmem_cache_node, n, sizeof(struct kmem_cache_node), // 디버깅 코드
 		      GFP_KERNEL);
-	init_kmem_cache_node(n);
-	inc_slabs_node(kmem_cache_node, node, page->objects);
+	init_kmem_cache_node(n); // 할당받은 n 값 초기화
+	inc_slabs_node(kmem_cache_node, node, page->objects); // 디버깅 코드, 지정 노드의 slab 수를 증가
+	
 
 	/*
 	 * No locks need to be taken here as it has just been
 	 * initialized and there is no concurrent access.
 	 */
-	__add_partial(n, page, DEACTIVATE_TO_HEAD);
+	__add_partial(n, page, DEACTIVATE_TO_HEAD); // n->partial = page->lru
 }
 
 static void free_kmem_cache_nodes(struct kmem_cache *s)
@@ -3213,20 +3218,28 @@ void __kmem_cache_release(struct kmem_cache *s)
 
 static int init_kmem_cache_nodes(struct kmem_cache *s)
 {
+	/**
+	 * @brief Initialize the kmem_cache_nodes
+	 * @param[in,out] s 노드를 추가할 kmem_cache 변수
+	 * @return
+	 *  1 - Pass
+	 *  0 - Fail
+	 */
 	int node;
 
 	for_each_node_state(node, N_NORMAL_MEMORY) {
 		struct kmem_cache_node *n;
 
-		if (slab_state == DOWN) {
-			early_kmem_cache_node_alloc(node);
+		if (slab_state == DOWN) { // 부팅 중에 실행되는 코드, slab 객체를 할당받지 못한 상태
+			early_kmem_cache_node_alloc(node); // TODO 4-124)
 			continue;
 		}
-		n = kmem_cache_alloc_node(kmem_cache_node,
+		// slab 할당자를 사용 가능한 경우
+		n = kmem_cache_alloc_node(kmem_cache_node, // slab 시스템이 준비된 경우 kmem_cache_node 캐시에서 슬랩 객체를 할당 받음
 						GFP_KERNEL, node);
 
 		if (!n) {
-			free_kmem_cache_nodes(s);
+			free_kmem_cache_nodes(s); // allocation 실패한 경우 s의 모든 노드를 할당 해제
 			return 0;
 		}
 
@@ -3366,15 +3379,21 @@ static int calculate_sizes(struct kmem_cache *s, int forced_order)
 
 static int kmem_cache_open(struct kmem_cache *s, unsigned long flags)
 {
-	s->flags = kmem_cache_flags(s->size, flags, s->name, s->ctor);
+	/**
+	 * @brief kmem_cache 값을 할당받음
+	 * @return
+	 *  0 - Pass
+	 *  EINVAL - Fail
+	 */
+	s->flags = kmem_cache_flags(s->size, flags, s->name, s->ctor); // flag를 가져옴
 	s->reserved = 0;
 
-	if (need_reserve_slab_rcu && (s->flags & SLAB_DESTROY_BY_RCU))
+	if (need_reserve_slab_rcu && (s->flags & SLAB_DESTROY_BY_RCU)) // SLAB_DESTROY_BY_RCU 플래그가 있는 경우 reserved = rcu_head 사이즈
 		s->reserved = sizeof(struct rcu_head);
 
-	if (!calculate_sizes(s, -1))
+	if (!calculate_sizes(s, -1)) // 객체 사이즈 계산해서 s->size로 입력
 		goto error;
-	if (disable_higher_order_debug) {
+	if (disable_higher_order_debug) { // ???
 		/*
 		 * Disable debugging flags that store metadata if the min slab
 		 * order increased.
@@ -3391,14 +3410,14 @@ static int kmem_cache_open(struct kmem_cache *s, unsigned long flags)
     defined(CONFIG_HAVE_ALIGNED_STRUCT_PAGE)
 	if (system_has_cmpxchg_double() && (s->flags & SLAB_NO_CMPXCHG) == 0)
 		/* Enable fast mode */
-		s->flags |= __CMPXCHG_DOUBLE;
+		s->flags |= __CMPXCHG_DOUBLE; // 위 커널 옵션을 사용하는 경우, page 구조체의 counters 필드를 unsigned long으로 변경하여 사용
 #endif
 
 	/*
 	 * The larger the object size is, the more pages we want on the partial
 	 * list to avoid pounding the page allocator excessively.
 	 */
-	set_min_partial(s, ilog2(s->size) / 2);
+	set_min_partial(s, ilog2(s->size) / 2); // s->min_partial에 값 입력
 
 	/*
 	 * cpu_partial determined the maximum number of objects kept in the
@@ -3417,6 +3436,7 @@ static int kmem_cache_open(struct kmem_cache *s, unsigned long flags)
 	 *    per node list when we run out of per cpu objects. We only fetch
 	 *    50% to keep some capacity around for frees.
 	 */
+	// cpu partial 값은 cpu당 최대 object 개수를 결정함
 	if (!kmem_cache_has_cpu_partial(s))
 		s->cpu_partial = 0;
 	else if (s->size >= PAGE_SIZE)
@@ -3429,15 +3449,15 @@ static int kmem_cache_open(struct kmem_cache *s, unsigned long flags)
 		s->cpu_partial = 30;
 
 #ifdef CONFIG_NUMA
-	s->remote_node_defrag_ratio = 1000;
+	s->remote_node_defrag_ratio = 1000; // 리모트 노드의 partial 리스트 사용 시 허용률
 #endif
-	if (!init_kmem_cache_nodes(s))
+	if (!init_kmem_cache_nodes(s)) // TODO 4-123)
 		goto error;
 
-	if (alloc_kmem_cache_cpus(s))
-		return 0;
+	if (alloc_kmem_cache_cpus(s)) // 할당 시도
+		return 0; // 할당이 성공한 경우 리턴
 
-	free_kmem_cache_nodes(s);
+	free_kmem_cache_nodes(s); // 할당이 실패한 경우 노드 할당 해제
 error:
 	if (flags & SLAB_PANIC)
 		panic("Cannot create slab %s size=%lu realsize=%u order=%u offset=%u flags=%lx\n",
@@ -3936,14 +3956,14 @@ void __init kmem_cache_init(void)
 				nr_node_ids * sizeof(struct kmem_cache_node *),
 		       SLAB_HWCACHE_ALIGN);
 
-	kmem_cache = bootstrap(&boot_kmem_cache); // TODO 4-112)
+	kmem_cache = bootstrap(&boot_kmem_cache); // 임시 할당 받은 boot_kmem_cache를 실제 캐시를 할당 받아옴
 
 	/*
 	 * Allocate kmem_cache_node properly from the kmem_cache slab.
 	 * kmem_cache_node is separately allocated so no need to
 	 * update any list pointers.
 	 */
-	kmem_cache_node = bootstrap(&boot_kmem_cache_node); //TODO 4-112)
+	kmem_cache_node = bootstrap(&boot_kmem_cache_node); // 임시 할당 받은 boot_kmem_cache_node 를 실제 캐시 할당받아옴
 
 	/* Now we can use the kmem_cache to allocate kmalloc slabs */
 	setup_kmalloc_cache_index_table(); // 4-113)
@@ -3967,32 +3987,35 @@ struct kmem_cache *
 __kmem_cache_alias(const char *name, size_t size, size_t align,
 		   unsigned long flags, void (*ctor)(void *))
 {
+	/**
+	 * @brief mergeable 캐시를 찾아서 리턴
+	 */
 	struct kmem_cache *s, *c;
 
-	s = find_mergeable(size, align, flags, name, ctor);
-	if (s) {
-		s->refcount++;
+	s = find_mergeable(size, align, flags, name, ctor); // TODO) 4-118, 병합 가능한 cache를 구한다.
+	if (s) { // 병합이 가능한 경우
+		s->refcount++; // 참조 카운터 증가
 
 		/*
 		 * Adjust the object sizes so that we clear
 		 * the complete object on kzalloc.
 		 */
-		s->object_size = max(s->object_size, (int)size);
-		s->inuse = max_t(int, s->inuse, ALIGN(size, sizeof(void *)));
+		s->object_size = max(s->object_size, (int)size); // object 사이즈 업데이트
+		s->inuse = max_t(int, s->inuse, ALIGN(size, sizeof(void *))); // 병합할 캐시의 object_size보다 요청 캐시의 size가 더 큰 경우 갱신한다
 
-		for_each_memcg_cache(c, s) {
+		for_each_memcg_cache(c, s) { // 모든 memcg cache에 적용
 			c->object_size = s->object_size;
 			c->inuse = max_t(int, c->inuse,
 					 ALIGN(size, sizeof(void *)));
 		}
 
-		if (sysfs_slab_alias(s, name)) {
-			s->refcount--;
+		if (sysfs_slab_alias(s, name)) { // TODO) 4-119
+			s->refcount--; // 참조 카운터 감소
 			s = NULL;
 		}
 	}
 
-	return s;
+	return s; // merge 진행한 kmem_cache 리턴
 }
 
 /**
@@ -4002,9 +4025,15 @@ __kmem_cache_alias(const char *name, size_t size, size_t align,
  */
 int __kmem_cache_create(struct kmem_cache *s, unsigned long flags)
 {
+	/**
+	 * @brief kmem_cache를 생성
+	 * @return
+	 *  0 - Pass
+	 *  err - Fail
+	 */
 	int err;
 
-	err = kmem_cache_open(s, flags);
+	err = kmem_cache_open(s, flags); // 4-122
 	if (err)
 		return err;
 
@@ -4012,10 +4041,10 @@ int __kmem_cache_create(struct kmem_cache *s, unsigned long flags)
 	if (slab_state <= UP)
 		return 0;
 
-	memcg_propagate_slab_attrs(s);
-	err = sysfs_slab_add(s);
+	memcg_propagate_slab_attrs(s); // ??? MEMCG_KMEM 커널 옵션이 있는 경우 생성한 캐시의 루트 캐시에 대한 모든 속성을 읽어서 재설정
+	err = sysfs_slab_add(s); // 캐시 내용을 파일 시스템으로 볼 수 있도록 symbolic link 파일 생성
 	if (err)
-		__kmem_cache_release(s);
+		__kmem_cache_release(s); // kmem_cache 할당 해제
 
 	return err;
 }
@@ -4493,7 +4522,9 @@ static void resiliency_test(void) {};
 #endif
 #endif
 
+#define CONFIG_SYSFS // 임시 선언
 #ifdef CONFIG_SYSFS
+#undef CONFIG_SYSFS // 임시 선언
 enum slab_stat_type {
 	SL_ALL,			/* All slabs */
 	SL_PARTIAL,		/* Only partially allocated slabs */
@@ -5275,12 +5306,14 @@ static ssize_t slab_attr_store(struct kobject *kobj,
 
 static void memcg_propagate_slab_attrs(struct kmem_cache *s)
 {
+#define CONFIG_MEMCG // 임시선언
 #ifdef CONFIG_MEMCG
+#undef CONFIG_MEMCG // 임시선언
 	int i;
 	char *buffer = NULL;
 	struct kmem_cache *root_cache;
 
-	if (is_root_cache(s))
+	if (is_root_cache(s)) // root cache인 경우 수정 없음
 		return;
 
 	root_cache = s->memcg_params.root_cache;
@@ -5376,12 +5409,16 @@ static inline struct kset *cache_kset(struct kmem_cache *s)
  */
 static char *create_unique_id(struct kmem_cache *s)
 {
-	char *name = kmalloc(ID_STR_LENGTH, GFP_KERNEL);
+	/**
+	 * @brief sysfs symbolic link 파일 명을 만듦
+	 * @return symbolic link 파일 명
+	 */
+	char *name = kmalloc(ID_STR_LENGTH, GFP_KERNEL); // buffer 할당
 	char *p = name;
 
 	BUG_ON(!name);
 
-	*p++ = ':';
+	*p++ = ':'; // ":"
 	/*
 	 * First flags affecting slabcache operations. We will only
 	 * get here for aliasable slabs so we do not need to support
@@ -5389,6 +5426,7 @@ static char *create_unique_id(struct kmem_cache *s)
 	 * are matched during merging to guarantee that the id is
 	 * unique.
 	 */
+	// 하기 내용이 플래그에 맞춰 순차적으로 추가됨
 	if (s->flags & SLAB_CACHE_DMA)
 		*p++ = 'd';
 	if (s->flags & SLAB_RECLAIM_ACCOUNT)
@@ -5411,22 +5449,22 @@ static int sysfs_slab_add(struct kmem_cache *s)
 {
 	int err;
 	const char *name;
-	int unmergeable = slab_unmergeable(s);
+	int unmergeable = slab_unmergeable(s); // unmergeable 체크
 
-	if (unmergeable) {
+	if (unmergeable) { // unmergeable 일 경우 (디버깅 케이스)
 		/*
 		 * Slabcache can never be merged so we can use the name proper.
 		 * This is typically the case for debug situations. In that
 		 * case we can catch duplicate names easily.
 		 */
-		sysfs_remove_link(&slab_kset->kobj, s->name);
-		name = s->name;
+		sysfs_remove_link(&slab_kset->kobj, s->name); // symbolic link 제거
+		name = s->name; // 이름을 복사함
 	} else {
 		/*
 		 * Create a unique name for the slab as a target
 		 * for the symlinks.
 		 */
-		name = create_unique_id(s);
+		name = create_unique_id(s); // 심볼링 링크 파일 이름을 만듦
 	}
 
 	s->kobj.kset = cache_kset(s);
@@ -5493,24 +5531,31 @@ static struct saved_alias *alias_list;
 
 static int sysfs_slab_alias(struct kmem_cache *s, const char *name)
 {
+	/**
+	 * @brief sysfs용 링크 파일을 생성한다.
+	 * @return
+	 *  0 - Pass
+	 *  -ENOMEM - Fail
+	 */
 	struct saved_alias *al;
 
-	if (slab_state == FULL) {
+	if (slab_state == FULL) { // 슬랩 할당자가 완전히 동작을 시작한 경우
 		/*
 		 * If we have a leftover link then remove it.
 		 */
-		sysfs_remove_link(&slab_kset->kobj, name);
-		return sysfs_create_link(&slab_kset->kobj, &s->kobj, name);
+		sysfs_remove_link(&slab_kset->kobj, name); // name 링크를 제거
+		return sysfs_create_link(&slab_kset->kobj, &s->kobj, name); // name으로 새 링크를 만듦
 	}
-
-	al = kmalloc(sizeof(struct saved_alias), GFP_KERNEL);
+	// 슬랩 할당자가 동작하지 않은 경우 나중에 동작시키기 위해 alias_list에 추가
+	al = kmalloc(sizeof(struct saved_alias), GFP_KERNEL); // saved_alias 메모리 할당
 	if (!al)
 		return -ENOMEM;
 
-	al->s = s;
+	// 할당받은 saves_alias에 데이터 입력
+	al->s = s; 
 	al->name = name;
-	al->next = alias_list;
-	alias_list = al;
+	al->next = alias_list; // push_front
+	alias_list = al; // alias_list 업데이트
 	return 0;
 }
 
