@@ -6771,7 +6771,7 @@ int __meminit init_per_zone_wmark_min(void)
 	setup_per_zone_wmarks(); // TODO 4-104
 	refresh_zone_stat_thresholds(); // TODO 4-106
 	setup_per_zone_lowmem_reserve(); // TODO 4-108
-	setup_per_zone_inactive_ratio(); // 책 409p
+	setup_per_zone_inactive_ratio(); // 잘 사용하지 않는 유저 페이지를 swap 디스크로 옮겨 페이지 확보
 	return 0;
 }
 core_initcall(init_per_zone_wmark_min)

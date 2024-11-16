@@ -252,12 +252,15 @@ static void prefetch_freepointer(const struct kmem_cache *s, void *object)
 
 static inline void *get_freepointer_safe(struct kmem_cache *s, void *object)
 {
+	/**
+	 * @brief freepointer를 가져옴
+	 */
 	void *p;
 
-	if (!debug_pagealloc_enabled())
+	if (!debug_pagealloc_enabled()) // 디버그 코드
 		return get_freepointer(s, object);
 
-	probe_kernel_read(&p, (void **)(object + s->offset), sizeof(p));
+	probe_kernel_read(&p, (void **)(object + s->offset), sizeof(p)); // 읽을 수 있는 메모리인지 확인 후 p에 메모리 주소 복사
 	return p;
 }
 
@@ -344,36 +347,39 @@ static inline bool __cmpxchg_double_slab(struct kmem_cache *s, struct page *page
 		void *freelist_new, unsigned long counters_new,
 		const char *n)
 {
+	/**
+	 * @brief page->freelist와 freelist_old의 counter 값이 동일한 경우 freelist_new로 값을 업데이트 한다.
+	 */
 	VM_BUG_ON(!irqs_disabled());
 #if defined(CONFIG_HAVE_CMPXCHG_DOUBLE) && \
     defined(CONFIG_HAVE_ALIGNED_STRUCT_PAGE)
-	if (s->flags & __CMPXCHG_DOUBLE) {
+	if (s->flags & __CMPXCHG_DOUBLE) { // asm으로 atomic 처리
 		if (cmpxchg_double(&page->freelist, &page->counters,
 				   freelist_old, counters_old,
 				   freelist_new, counters_new))
 			return true;
 	} else
 #endif
-	{
-		slab_lock(page);
-		if (page->freelist == freelist_old &&
+	{ // atomic 처리가 필요 없는 경우
+		slab_lock(page); // spin lock
+		if (page->freelist == freelist_old && // freelist_old가 page의 freelist인 경우
 					page->counters == counters_old) {
-			page->freelist = freelist_new;
-			set_page_slub_counters(page, counters_new);
-			slab_unlock(page);
-			return true;
+			page->freelist = freelist_new; // page의 freelist를 새 값으로 업데이트
+			set_page_slub_counters(page, counters_new); // page counter 및 플래그 값 업데이트
+			slab_unlock(page); // spin unlock
+			return true; // pass
 		}
-		slab_unlock(page);
+		slab_unlock(page); // spin lock
 	}
 
-	cpu_relax();
-	stat(s, CMPXCHG_DOUBLE_FAIL);
+	cpu_relax(); // barrier (캐시 동기화)
+	stat(s, CMPXCHG_DOUBLE_FAIL); // CMPXCHG_DOUBLE_FAIL stat 업데이트
 
 #ifdef SLUB_DEBUG_CMPXCHG
 	pr_info("%s %s: cmpxchg double redo ", n, s->name);
 #endif
 
-	return false;
+	return false; // fail
 }
 
 static inline bool cmpxchg_double_slab(struct kmem_cache *s, struct page *page,
@@ -1019,6 +1025,9 @@ static inline unsigned long node_nr_slabs(struct kmem_cache_node *n)
 
 static inline void inc_slabs_node(struct kmem_cache *s, int node, int objects)
 {
+	/**
+	 * @brief 노드의 slab 카운트 증가
+	 */
 	struct kmem_cache_node *n = get_node(s, node);
 
 	/*
@@ -1387,18 +1396,28 @@ static void setup_object(struct kmem_cache *s, struct page *page,
 static inline struct page *alloc_slab_page(struct kmem_cache *s,
 		gfp_t flags, int node, struct kmem_cache_order_objects oo)
 {
+	/**
+	 * @brief slab page를 할당한다.
+	 * @param[in] s kmem_cache
+	 * @param[in] flags 할당 플래그
+	 * @param[in] node node id
+	 * @param[in] oo order object
+	 * @return
+	 *  page pointer - pass
+	 *  NULL - fail
+	 */
 	struct page *page;
-	int order = oo_order(oo);
+	int order = oo_order(oo); // order 값만 분리
 
-	flags |= __GFP_NOTRACK;
+	flags |= __GFP_NOTRACK; // 트래킹 시도 금지
 
 	if (node == NUMA_NO_NODE)
-		page = alloc_pages(flags, order);
+		page = alloc_pages(flags, order); // UMA 시스템 슬랩 페이지 할당
 	else
-		page = __alloc_pages_node(node, flags, order);
+		page = __alloc_pages_node(node, flags, order); // NUMA 시스템 슬랩 페이지 할당
 
-	if (page && memcg_charge_slab(page, flags, order, s)) {
-		__free_pages(page, order);
+	if (page && memcg_charge_slab(page, flags, order, s)) { // memcg 사용하는 경우 등록, 불가능한 경우 Fail로 처리
+		__free_pages(page, order); // 등록이 실패한 경우 해당 페이지를 할당 해제
 		page = NULL;
 	}
 
@@ -1413,40 +1432,41 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	void *start, *p;
 	int idx, order;
 
-	flags &= gfp_allowed_mask;
+	flags &= gfp_allowed_mask; // allowed_mask 에서 허용되지 않는 마스크 값 제거
 
-	if (gfpflags_allow_blocking(flags))
+	if (gfpflags_allow_blocking(flags)) // GFP_RECLAIM 플래그가 있을 경우 선점 허용
 		local_irq_enable();
 
-	flags |= s->allocflags;
+	flags |= s->allocflags; // flag에 kmem_cache alloc flag 추가
 
 	/*
 	 * Let the initial higher-order allocation fail under memory pressure
 	 * so we fall-back to the minimum order allocation.
 	 */
-	alloc_gfp = (flags | __GFP_NOWARN | __GFP_NORETRY) & ~__GFP_NOFAIL;
-	if ((alloc_gfp & __GFP_DIRECT_RECLAIM) && oo_order(oo) > oo_order(s->min))
-		alloc_gfp = (alloc_gfp | __GFP_NOMEMALLOC) & ~(__GFP_RECLAIM|__GFP_NOFAIL);
+	alloc_gfp = (flags | __GFP_NOWARN | __GFP_NORETRY) & ~__GFP_NOFAIL; // alloc_gfp 초기화, 입력한 flag에 NOWARN, NORETRY 추가 및 GFP_NOFAIL 제거
+	if ((alloc_gfp & __GFP_DIRECT_RECLAIM) && oo_order(oo) > oo_order(s->min)) // direct_reclaim 허용 및 첫번째 시도인 경우 (재시도인 경우 oo 가 min보다 작음)
+		alloc_gfp = (alloc_gfp | __GFP_NOMEMALLOC) & ~(__GFP_RECLAIM|__GFP_NOFAIL); // reserved 영역 사용 금지, 회수 가능 페이지 불가, 실패 허용
 
-	page = alloc_slab_page(s, alloc_gfp, node, oo);
-	if (unlikely(!page)) {
-		oo = s->min;
-		alloc_gfp = flags;
+	page = alloc_slab_page(s, alloc_gfp, node, oo); // TODO 4-128)
+// 4-127) ...
+	if (unlikely(!page)) { // 슬랩 페이지 할당이 실패한 경우
+		oo = s->min; // min 값으로 재시도
+		alloc_gfp = flags; // flag는 원래 flag 값으로 진행
 		/*
 		 * Allocation may have failed due to fragmentation.
 		 * Try a lower order alloc if possible
 		 */
-		page = alloc_slab_page(s, alloc_gfp, node, oo);
+		page = alloc_slab_page(s, alloc_gfp, node, oo); // TODO 4-128)
 		if (unlikely(!page))
 			goto out;
-		stat(s, ORDER_FALLBACK);
+		stat(s, ORDER_FALLBACK); // ORDER_FALLBACK 카운트 증가
 	}
 
-	if (kmemcheck_enabled &&
-	    !(s->flags & (SLAB_NOTRACK | DEBUG_DEFAULT_FLAGS))) {
+	if (kmemcheck_enabled && // 디버그 코드
+	    !(s->flags & (SLAB_NOTRACK | DEBUG_DEFAULT_FLAGS))) { // SLAB_NOTRACK : kmem_check를 이용한 디버그 트래킹 시도를 허용하지 않음
 		int pages = 1 << oo_order(oo);
 
-		kmemcheck_alloc_shadow(page, oo_order(oo), alloc_gfp, node);
+		kmemcheck_alloc_shadow(page, oo_order(oo), alloc_gfp, node); // shadow page를 할당받음
 
 		/*
 		 * Objects from caches that have a constructor don't get
@@ -1458,58 +1478,64 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 			kmemcheck_mark_unallocated_pages(page, pages);
 	}
 
-	page->objects = oo_objects(oo);
+	page->objects = oo_objects(oo); // page->object 저장
 
-	order = compound_order(page);
-	page->slab_cache = s;
-	__SetPageSlab(page);
-	if (page_is_pfmemalloc(page))
-		SetPageSlabPfmemalloc(page);
+	order = compound_order(page); // 컴파운드 오더 값 저장
+	page->slab_cache = s; // slab_cache 저장
+	__SetPageSlab(page); // page 저장
+	if (page_is_pfmemalloc(page)) // 페이지가 pfemamlloc 설정된 경우
+		SetPageSlabPfmemalloc(page); // Active 플래그 설정
 
-	start = page_address(page);
+	start = page_address(page); // page start address 저장
 
-	if (unlikely(s->flags & SLAB_POISON))
-		memset(start, POISON_INUSE, PAGE_SIZE << order);
+	if (unlikely(s->flags & SLAB_POISON)) // SLAB POISON 설정이 잇는 경우 (디버그용)
+		memset(start, POISON_INUSE, PAGE_SIZE << order); // 페이지 전체를 POISON_INUSE로 할당
 
-	kasan_poison_slab(page);
+	kasan_poison_slab(page); // 디버그용 코드
 
-	for_each_object_idx(p, idx, s, start, page->objects) {
+	for_each_object_idx(p, idx, s, start, page->objects) { // freepointer 업데이트
 		setup_object(s, page, p);
 		if (likely(idx < page->objects))
-			set_freepointer(s, p, p + s->size);
+			set_freepointer(s, p, p + s->size); // p + s.offset = s->size
 		else
-			set_freepointer(s, p, NULL);
+			set_freepointer(s, p, NULL); // p + s.offset = NULL, 마지막 케이스
 	}
 
-	page->freelist = fixup_red_left(s, start);
+	page->freelist = fixup_red_left(s, start); // freelist에 페이지의 첫번째 주소 값 입력
 	page->inuse = page->objects;
-	page->frozen = 1;
+	page->frozen = 1; // 슬랩 페이지의 freelist를 잠궈 현재 태스크가 직접 관리하도록 만듦
 
 out:
-	if (gfpflags_allow_blocking(flags))
+	if (gfpflags_allow_blocking(flags)) // 선점 해제
 		local_irq_disable();
-	if (!page)
+	if (!page) // 할당 실패한 경우 NULL return
 		return NULL;
 
-	mod_zone_page_state(page_zone(page),
+	mod_zone_page_state(page_zone(page), // vm_stat 업데이트
 		(s->flags & SLAB_RECLAIM_ACCOUNT) ?
 		NR_SLAB_RECLAIMABLE : NR_SLAB_UNRECLAIMABLE,
 		1 << oo_order(oo));
 
-	inc_slabs_node(s, page_to_nid(page), page->objects);
+	inc_slabs_node(s, page_to_nid(page), page->objects); // node 에서 slab 카운터를 증가
 
-	return page;
+	return page; // 할당받은 슬랩 페이지 리턴
 }
 
 static struct page *new_slab(struct kmem_cache *s, gfp_t flags, int node)
 {
+	/**
+	 * @brief 슬랩 페이지를 할당 받고 초기화를 진행
+	 * @param[out] s 할당받을 kmem_cache 객체
+	 * @param[in] flags 할당받을 때 사용할 플래그 값
+	 * @param[in] node node 번호
+	 */
 	if (unlikely(flags & GFP_SLAB_BUG_MASK)) {
 		pr_emerg("gfp: %u\n", flags & GFP_SLAB_BUG_MASK);
 		BUG();
 	}
 
 	return allocate_slab(s,
-		flags & (GFP_RECLAIM_MASK | GFP_CONSTRAINT_MASK), node); // TODO 4-126)
+		flags & (GFP_RECLAIM_MASK | GFP_CONSTRAINT_MASK), node); // TODO 4-126), flags 에 RECLAIM_MASK, GFP_CONSTRANINT_MASK만 사용
 }
 
 static void __free_slab(struct kmem_cache *s, struct page *page)
@@ -1890,16 +1916,16 @@ static void deactivate_slab(struct kmem_cache *s, struct page *page,
 	 * There is no need to take the list->lock because the page
 	 * is still frozen.
 	 */
-	while (freelist && (nextfree = get_freepointer(s, freelist))) {
+	while (freelist && (nextfree = get_freepointer(s, freelist))) { // 해당 kmem_cache 내의 모든 fp에서 진행
 		void *prior;
 		unsigned long counters;
 
 		do {
 			prior = page->freelist;
 			counters = page->counters;
-			set_freepointer(s, freelist, prior);
+			set_freepointer(s, freelist, prior); //  freelist 의 다음 fp = prior
 			new.counters = counters;
-			new.inuse--;
+			new.inuse--; // inuse count 감소
 			VM_BUG_ON(!new.frozen);
 
 		} while (!__cmpxchg_double_slab(s, page,
@@ -2315,6 +2341,14 @@ static inline bool pfmemalloc_match(struct page *page, gfp_t gfpflags)
  */
 static inline void *get_freelist(struct kmem_cache *s, struct page *page)
 {
+	/**
+	 * @brief page에서 freelist를 가져옴
+	 * @param[in]
+	 * @param[in] page 참조할 slub page
+	 * @return
+	 *  freelist - pass
+	 *  null - fail
+	 */
 	struct page new;
 	unsigned long counters;
 	void *freelist;
@@ -2334,7 +2368,7 @@ static inline void *get_freelist(struct kmem_cache *s, struct page *page)
 		NULL, new.counters,
 		"get_freelist"));
 
-	return freelist;
+	return freelist; // 가져온 freelist 리턴
 }
 
 /*
@@ -2359,35 +2393,44 @@ static inline void *get_freelist(struct kmem_cache *s, struct page *page)
 static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 			  unsigned long addr, struct kmem_cache_cpu *c)
 {
+	/**
+	 * @brief slab 페이지를 할당받음
+	 * @param[in,out] s kmem_cache
+	 * @param[in] gfpflags 할당할 때 사용할 flag
+	 * @param[in] node node id
+	 * @param[in] addr start address
+	 * @param[out] c per-cpu
+	 */
 	void *freelist;
 	struct page *page;
 
-	page = c->page;
-	if (!page)
+	page = c->page; // percpu cache 에서 페이지를 가져옴
+	if (!page) // 할당이 되지 않은 경우
 		goto new_slab;
 redo:
 
-	if (unlikely(!node_match(page, node))) {
+	if (unlikely(!node_match(page, node))) { // 할당받은 페이지가 지정된 node에 있지 않은 경우
 		int searchnode = node;
 
-		if (node != NUMA_NO_NODE && !node_present_pages(node))
-			searchnode = node_to_mem_node(node);
+		if (node != NUMA_NO_NODE && !node_present_pages(node)) // 현재 node 에 present node가 없는 경우 (공간이 없는 경우)
+			searchnode = node_to_mem_node(node); // 인접 노드를 찾는다 (책 설명)
 
-		if (unlikely(!node_match(page, searchnode))) {
-			stat(s, ALLOC_NODE_MISMATCH);
-			deactivate_slab(s, page, c->freelist);
+		if (unlikely(!node_match(page, searchnode))) { // 현재 노드와 찾은 노드가 불일치하는 경우
+			stat(s, ALLOC_NODE_MISMATCH); // NODE Mismatch stat 증가
+			deactivate_slab(s, page, c->freelist); // 해당 슬랩 비활성화 및 page freelist를 percpu freelist로 이동
 			c->page = NULL;
 			c->freelist = NULL;
-			goto new_slab;
+			goto new_slab; // 새 슬랩 페이지 할당 시도
 		}
 	}
+// 4-133) ...
 
 	/*
 	 * By rights, we should be searching for a slab page that was
 	 * PFMEMALLOC but right now, we are losing the pfmemalloc
 	 * information when the page leaves the per-cpu allocator
 	 */
-	if (unlikely(!pfmemalloc_match(page, gfpflags))) {
+	if (unlikely(!pfmemalloc_match(page, gfpflags))) { // 비상용 슬랩 페이지가 선택된 경우
 		deactivate_slab(s, page, c->freelist);
 		c->page = NULL;
 		c->freelist = NULL;
@@ -2396,60 +2439,60 @@ redo:
 
 	/* must check again c->freelist in case of cpu migration or IRQ */
 	freelist = c->freelist;
-	if (freelist)
-		goto load_freelist;
+	if (freelist) // percpu freelist가 비어있는지 확인
+		goto load_freelist; // 비어있을 경우 load_freelist 실행
 
-	freelist = get_freelist(s, page);
+	freelist = get_freelist(s, page); // TODO 4-135)
 
-	if (!freelist) {
+	if (!freelist) { // freelist 를 가져오지 못한 경우
 		c->page = NULL;
-		stat(s, DEACTIVATE_BYPASS);
-		goto new_slab;
+		stat(s, DEACTIVATE_BYPASS); // DEACTIVATE_BYPASS stat 업데이트
+		goto new_slab; // new_slab 실행
 	}
 
-	stat(s, ALLOC_REFILL);
-
-load_freelist:
+	stat(s, ALLOC_REFILL); // ALLOC_REFILL stat 업데이트
+// 4-134) ...
+load_freelist: // cpu cache에 freelist가 있는 경우
 	/*
 	 * freelist is pointing to the list of objects to be used.
 	 * page is pointing to the page from which the objects are obtained.
 	 * That page must be frozen for per cpu allocations to work.
 	 */
-	VM_BUG_ON(!c->page->frozen);
-	c->freelist = get_freepointer(s, freelist);
-	c->tid = next_tid(c->tid);
+	VM_BUG_ON(!c->page->frozen); // frozen 플래그가 없는 경우
+	c->freelist = get_freepointer(s, freelist); // kmem_cache에서 free pointer를 가져옴
+	c->tid = next_tid(c->tid); // tid 업데이트
 	return freelist;
 
-new_slab:
+new_slab: // slab 페이지가 없는 경우
 
-	if (c->partial) {
-		page = c->page = c->partial;
-		c->partial = page->next;
-		stat(s, CPU_PARTIAL_ALLOC);
-		c->freelist = NULL;
-		goto redo;
+	if (c->partial) { // percpu 캐시의 partial에 남는 페이지가 있을 경우
+		page = c->page = c->partial; 
+		c->partial = page->next; // partial page 업데이트
+		stat(s, CPU_PARTIAL_ALLOC); // CPU_PARTIAL_ALLOC stat 업데이트
+		c->freelist = NULL; // 
+		goto redo; // partial page로 재시도
 	}
 
-	freelist = new_slab_objects(s, gfpflags, node, &c);
+	freelist = new_slab_objects(s, gfpflags, node, &c); // TODO 4-137)
 
-	if (unlikely(!freelist)) {
-		slab_out_of_memory(s, gfpflags, node);
-		return NULL;
+	if (unlikely(!freelist)) { // freelist 할당 실패
+		slab_out_of_memory(s, gfpflags, node); // 로그 출력 코드 (메모리 공간이 없는 경우)
+		return NULL; // 할당 실패
 	}
 
 	page = c->page;
-	if (likely(!kmem_cache_debug(s) && pfmemalloc_match(page, gfpflags)))
-		goto load_freelist;
+	if (likely(!kmem_cache_debug(s) && pfmemalloc_match(page, gfpflags))) // 디버그 플래그가 없을 경우
+		goto load_freelist; // load_freelist 시퀀스 진행
 
 	/* Only entered in the debug case */
-	if (kmem_cache_debug(s) &&
-			!alloc_debug_processing(s, page, freelist, addr))
+	if (kmem_cache_debug(s) && // 디버깅 플래그가 있는 경우, 
+			!alloc_debug_processing(s, page, freelist, addr)) // 디버그 처리가 실패된 경우
 		goto new_slab;	/* Slab failed checks. Next slab needed */
 
-	deactivate_slab(s, page, get_freepointer(s, freelist));
+	deactivate_slab(s, page, get_freepointer(s, freelist)); // 할당 해제
 	c->page = NULL;
 	c->freelist = NULL;
-	return freelist;
+	return freelist; // load_freelist 진행 없이 freerlist 리턴 (디버그 코드라서)
 }
 
 /*
@@ -2462,18 +2505,18 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 	void *p;
 	unsigned long flags;
 
-	local_irq_save(flags);
+	local_irq_save(flags); // IRQ Save
 #ifdef CONFIG_PREEMPT
 	/*
 	 * We may have been preempted and rescheduled on a different
 	 * cpu before disabling interrupts. Need to reload cpu area
 	 * pointer.
 	 */
-	c = this_cpu_ptr(s->cpu_slab);
+	c = this_cpu_ptr(s->cpu_slab); // cpu 캐시를 다시 가져옴
 #endif
 
-	p = ___slab_alloc(s, gfpflags, node, addr, c);
-	local_irq_restore(flags);
+	p = ___slab_alloc(s, gfpflags, node, addr, c); // TODO 4-132)
+	local_irq_restore(flags); // IRQ Restore
 	return p;
 }
 
@@ -2490,12 +2533,15 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 		gfp_t gfpflags, int node, unsigned long addr)
 {
+	/**
+	 * @brief slab 페이지 할당 시도
+	 */
 	void *object;
 	struct kmem_cache_cpu *c;
 	struct page *page;
 	unsigned long tid;
 
-	s = slab_pre_alloc_hook(s, gfpflags);
+	s = slab_pre_alloc_hook(s, gfpflags); // 할당 시도 전에 할당이 가능한지 확인 (memcg 체크, flag 체크)
 	if (!s)
 		return NULL;
 redo:
@@ -2510,8 +2556,8 @@ redo:
 	 * to check if it is matched or not.
 	 */
 	do {
-		tid = this_cpu_read(s->cpu_slab->tid);
-		c = raw_cpu_ptr(s->cpu_slab);
+		tid = this_cpu_read(s->cpu_slab->tid); // tid 기록
+		c = raw_cpu_ptr(s->cpu_slab); // kmem_cache_cpu를 가져옴
 	} while (IS_ENABLED(CONFIG_PREEMPT) &&
 		 unlikely(tid != READ_ONCE(c->tid)));
 
@@ -2523,7 +2569,7 @@ redo:
 	 * page could be one associated with next tid and our alloc/free
 	 * request will be failed. In this case, we will retry. So, no problem.
 	 */
-	barrier();
+	barrier(); // 메모리 동기화
 
 	/*
 	 * The transaction ids are globally unique per cpu and per operation on
@@ -2532,13 +2578,14 @@ redo:
 	 * linked list in between.
 	 */
 
-	object = c->freelist;
+	object = c->freelist; // 사용할 object를 freelist에서 가져온다.
 	page = c->page;
-	if (unlikely(!object || !node_match(page, node))) {
-		object = __slab_alloc(s, gfpflags, node, addr, c);
-		stat(s, ALLOC_SLOWPATH);
-	} else {
-		void *next_object = get_freepointer_safe(s, object);
+// 4-130) ...
+	if (unlikely(!object || !node_match(page, node))) { // 할당할 객체가 없거나 다른 노드에서 가져온 경우
+		object = __slab_alloc(s, gfpflags, node, addr, c); // TODO 4-131)
+		stat(s, ALLOC_SLOWPATH); // ALLOC_SLOWPATH stat 증가
+	} else { // 할당이 정상적으로 진행된 경우
+		void *next_object = get_freepointer_safe(s, object); // freepointer를 가져옴
 
 		/*
 		 * The cmpxchg will only match if there was no additional
@@ -2554,22 +2601,22 @@ redo:
 		 * against code executing on this cpu *not* from access by
 		 * other cpus.
 		 */
-		if (unlikely(!this_cpu_cmpxchg_double(
+		if (unlikely(!this_cpu_cmpxchg_double( 
 				s->cpu_slab->freelist, s->cpu_slab->tid,
 				object, tid,
 				next_object, next_tid(tid)))) {
 
-			note_cmpxchg_failure("slab_alloc", s, tid);
-			goto redo;
+			note_cmpxchg_failure("slab_alloc", s, tid); // cache failure 기록
+			goto redo; // 재시도
 		}
-		prefetch_freepointer(s, next_object);
-		stat(s, ALLOC_FASTPATH);
+		prefetch_freepointer(s, next_object); // 다음 free pointer 를 미리 fetch
+		stat(s, ALLOC_FASTPATH); // ALLOC_FASTPATH stat 증가
 	}
 
-	if (unlikely(gfpflags & __GFP_ZERO) && object)
-		memset(object, 0, s->object_size);
+	if (unlikely(gfpflags & __GFP_ZERO) && object) // 할당 영역을 0으로 초기화 시켜야 하는 경우
+		memset(object, 0, s->object_size); // 0으로 초기화
 
-	slab_post_alloc_hook(s, gfpflags, 1, &object);
+	slab_post_alloc_hook(s, gfpflags, 1, &object); // 객체 할당 완료 정보를 memcg에 전달
 
 	return object;
 }
