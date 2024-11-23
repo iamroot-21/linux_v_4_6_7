@@ -557,6 +557,10 @@ static inline compound_page_dtor *get_compound_page_dtor(struct page *page)
 
 static inline unsigned int compound_order(struct page *page)
 {
+	/**
+	 * @brief 컴파운드 오더 값을 리턴한다.
+	 * @details 컴파운드 페이지는 2개 이상의 연속된 페이지가 하나의 유닛으로 포함된 페이지를 말한다. (2^n 개 단위로 존재)
+	 */
 	if (!PageHead(page))
 		return 0;
 	return page[1].compound_order;

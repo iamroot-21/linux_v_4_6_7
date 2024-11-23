@@ -68,10 +68,10 @@ EXPORT_SYMBOL(kstrdup);
  */
 const char *kstrdup_const(const char *s, gfp_t gfp)
 {
-	if (is_kernel_rodata((unsigned long)s))
-		return s;
+	if (is_kernel_rodata((unsigned long)s)) // readonly 인 경우
+		return s; // 값을 그대로 리턴
 
-	return kstrdup(s, gfp);
+	return kstrdup(s, gfp); // 메모리를 할당 받아서 리턴 (자세한 내용은 분석 필요)
 }
 EXPORT_SYMBOL(kstrdup_const);
 

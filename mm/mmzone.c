@@ -60,11 +60,11 @@ struct zoneref *next_zones_zonelist(struct zoneref *z,
 	 * Find the next suitable zone to use for the allocation.
 	 * Only filter based on nodemask if it's set
 	 */
-	if (likely(nodes == NULL))
-		while (zonelist_zone_idx(z) > highest_zoneidx)
+	if (likely(nodes == NULL)) // nodemask 값이 없는 경우
+		while (zonelist_zone_idx(z) > highest_zoneidx) // zone index를 마지막 값까지 순회
 			z++;
 	else
-		while (zonelist_zone_idx(z) > highest_zoneidx ||
+		while (zonelist_zone_idx(z) > highest_zoneidx || // zopne index 값을 마지막까지 순회, zone이 할당이 안되어있거나 zoneref 값이 mask 된 경우 루프 종료
 				(z->zone && !zref_in_nodemask(z, nodes)))
 			z++;
 

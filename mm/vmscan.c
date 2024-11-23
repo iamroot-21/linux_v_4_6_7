@@ -3713,7 +3713,7 @@ static int __zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 		.may_swap = 1,
 	};
 
-	cond_resched(); // 하드웨어 동기화 (확인 필요)
+	cond_resched(); // 필요할 경우 스케줄러를 조건부로 호출
 	/*
 	 * We need to be able to allocate from the reserves for RECLAIM_UNMAP
 	 * and we also need to be able to write out pages for RECLAIM_WRITE
@@ -3724,13 +3724,13 @@ static int __zone_reclaim(struct zone *zone, gfp_t gfp_mask, unsigned int order)
 	reclaim_state.reclaimed_slab = 0;
 	p->reclaim_state = &reclaim_state;
 
-	if (zone_pagecache_reclaimable(zone) > zone->min_unmapped_pages) {
+	if (zone_pagecache_reclaimable(zone) > zone->min_unmapped_pages) { // reclaimable page가 최소 페이지를 넘어가는 경우
 		/*
 		 * Free memory by calling shrink zone with increasing
 		 * priorities until we have enough memory freed.
 		 */
 		do {
-			shrink_zone(zone, &sc, true);
+			shrink_zone(zone, &sc, true); // reclaim 진행
 		} while (sc.nr_reclaimed < nr_pages && --sc.priority >= 0);
 	}
 

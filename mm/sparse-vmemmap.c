@@ -230,7 +230,7 @@ int __meminit vmemmap_populate_basepages(unsigned long start,
 	pte_t *pte;
 
 	for (; addr < end; addr += PAGE_SIZE) {
-		pgd = vmemmap_pgd_populate(addr, node);							// 1 page 메모리 할당 및 pgd 등록0
+		pgd = vmemmap_pgd_populate(addr, node);							// 1 page 메모리 할당 및 테이블 등록
 		if (!pgd)
 			return -ENOMEM;
 		pud = vmemmap_pud_populate(pgd, addr, node);					// pud에 동일 시퀀스 반복
@@ -239,7 +239,7 @@ int __meminit vmemmap_populate_basepages(unsigned long start,
 		pmd = vmemmap_pmd_populate(pud, addr, node);					// pmd에 동일 시퀀스 반복
 		if (!pmd)
 			return -ENOMEM;
-		pte = vmemmap_pte_populate(pmd, addr, node);					// 코드 3-41
+		pte = vmemmap_pte_populate(pmd, addr, node);					// pte 할당 및 테이블 등록
 		if (!pte)
 			return -ENOMEM;
 		vmemmap_verify(pte, node, addr, addr + PAGE_SIZE);

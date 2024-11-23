@@ -1178,7 +1178,7 @@ void __init_memblock __next_mem_range_rev(u64 *idx, int nid, ulong flags,
 }
 
 
-#define CONFIG_HAVE_MEMBLOCK_NODE_MAP
+#define CONFIG_HAVE_MEMBLOCK_NODE_MAP											// 임시 추가
 #ifdef CONFIG_HAVE_MEMBLOCK_NODE_MAP
 /*
  * Common iterator interface used to define for_each_mem_range().
@@ -1217,7 +1217,7 @@ void __init_memblock __next_mem_pfn_range(int *idx, int nid,
 	if (out_nid)
 		*out_nid = r->nid;
 }
-#undef CONFIG_HAVE_MEMBLOCK_NODE_MAP
+#undef CONFIG_HAVE_MEMBLOCK_NODE_MAP											// 임시 추가
 
 /**
  * memblock_set_node - set node ID on memblock regions

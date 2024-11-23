@@ -454,13 +454,13 @@ static unsigned long zone_dirty_limit(struct zone *zone)
 	/**
 	 * @brief dirty 페이지 제한 값을 계산
 	 */
-	unsigned long zone_memory = zone_dirtyable_memory(zone); // TODO) 4-94, dirty 페이지로 사용 가능한 개수를 가져옴
+	unsigned long zone_memory = zone_dirtyable_memory(zone); //dirty 페이지로 사용 가능한 개수를 가져옴
 	struct task_struct *tsk = current;
 	unsigned long dirty;
 
 	if (vm_dirty_bytes) //dirty byte 설정
-		dirty = DIV_ROUND_UP(vm_dirty_bytes, PAGE_SIZE) *
-			zone_memory / global_dirtyable_memory();
+		dirty = DIV_ROUND_UP(vm_dirty_bytes, PAGE_SIZE) * 
+			zone_memory / global_dirtyable_memory(); // 전체 dirty memory 중 현재 존의 dirty memory 비율 계산
 	else
 		dirty = vm_dirty_ratio * zone_memory / 100;
 

@@ -332,7 +332,10 @@ extern int vm_swappiness;
 extern int remove_mapping(struct address_space *mapping, struct page *page);
 extern unsigned long vm_total_pages;
 
+
+#define CONFIG_NUMA // 임시 선언
 #ifdef CONFIG_NUMA
+#undef CONFIG_NUMA // 임시 선언
 extern int zone_reclaim_mode;
 extern int sysctl_min_unmapped_ratio;
 extern int sysctl_min_slab_ratio;

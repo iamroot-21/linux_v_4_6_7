@@ -131,7 +131,7 @@ static inline unsigned long global_page_state(enum zone_stat_item item)
  * @brief kernel 메모리에서 long 데이터를 atomic으로 읽어옴
  * @param[in,out] zone target zone
  * @param[in] item 읽어올 stat
- * @return zone state
+ * @return 타겟 zone state
  */
 static inline unsigned long zone_page_state(struct zone *zone,
 					enum zone_stat_item item)

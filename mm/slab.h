@@ -327,6 +327,11 @@ static inline void slab_init_memcg_params(struct kmem_cache *s)
 
 static inline struct kmem_cache *cache_from_obj(struct kmem_cache *s, void *x)
 {
+	/**
+	 * @brief 슬랩 객체로 캐시를 구한다.
+	 * @param[in] s kmem_cache
+	 * @param[in] x slab
+	 */
 	struct kmem_cache *cachep;
 	struct page *page;
 
@@ -337,16 +342,16 @@ static inline struct kmem_cache *cache_from_obj(struct kmem_cache *s, void *x)
 	 * to not do even the assignment. In that case, slab_equal_or_root
 	 * will also be a constant.
 	 */
-	if (!memcg_kmem_enabled() &&
-	    !unlikely(s->flags & SLAB_CONSISTENCY_CHECKS))
-		return s;
+	if (!memcg_kmem_enabled() && // memcg가 활성화되지 않음
+	    !unlikely(s->flags & SLAB_CONSISTENCY_CHECKS)) // SLAB_CONSISTENCY_CHECKS flag가 없을 경우
+		return s; // 추가적인 작업 없이 캐시를 리턴
 
-	page = virt_to_head_page(x);
-	cachep = page->slab_cache;
-	if (slab_equal_or_root(cachep, s))
-		return cachep;
+	page = virt_to_head_page(x); // 입력받은 주소로 page를 구한다.
+	cachep = page->slab_cache; // cache 주소를 가져옴
+	if (slab_equal_or_root(cachep, s)) // 입력받은 cache 주소가 root이거나 page->slab_cache와 동일한 경우
+		return cachep; // 캐시 주소 리턴
 
-	pr_err("%s: Wrong slab cache. %s but object is from %s\n",
+	pr_err("%s: Wrong slab cache. %s but object is from %s\n", // 입력받은 캐시 주소가 지정된 캐시 주소와 다름! 에러 코드 출력
 	       __func__, s->name, cachep->name);
 	WARN_ON_ONCE(1);
 	return s;
@@ -385,7 +390,7 @@ static inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
 {
 	flags &= gfp_allowed_mask;
 	lockdep_trace_alloc(flags);
-	might_sleep_if(gfpflags_allow_blocking(flags));
+	might_sleep_if(gfpflags_allow_blocking(flags)); // GFP_RECLAIM 플래그가 있을 경우 슬립
 
 	if (should_failslab(s, flags))
 		return NULL;
