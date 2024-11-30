@@ -330,7 +330,7 @@ static inline struct kmem_cache *cache_from_obj(struct kmem_cache *s, void *x)
 	/**
 	 * @brief 슬랩 객체로 캐시를 구한다.
 	 * @param[in] s kmem_cache
-	 * @param[in] x slab
+	 * @param[in] x 가상 주소 값
 	 */
 	struct kmem_cache *cachep;
 	struct page *page;

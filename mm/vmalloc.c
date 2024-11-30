@@ -312,24 +312,28 @@ static struct vmap_area *__find_vmap_area(unsigned long addr)
 
 static void __insert_vmap_area(struct vmap_area *va)
 {
+	/**
+	 * @brief vmap_area_root 에 vmap_area를 등록한다.
+	 * 
+	 */
 	struct rb_node **p = &vmap_area_root.rb_node;
 	struct rb_node *parent = NULL;
 	struct rb_node *tmp;
 
-	while (*p) {
+	while (*p) { // 비어있는 노드를 찾는다. (node 보다 낮은 경우 left, 높은 경우 right 로 비어있는 노드를 찾음)
 		struct vmap_area *tmp_va;
 
 		parent = *p;
-		tmp_va = rb_entry(parent, struct vmap_area, rb_node);
-		if (va->va_start < tmp_va->va_end)
-			p = &(*p)->rb_left;
-		else if (va->va_end > tmp_va->va_start)
+		tmp_va = rb_entry(parent, struct vmap_area, rb_node); // vmap_area를 가져옴
+		if (va->va_start < tmp_va->va_end) // tmp_va 보다 주소 값이 낮은 경우 left
+			p = &(*p)->rb_left; // 주소 값 업데이트
+		else if (va->va_end > tmp_va->va_start) // tmp_va 보다 주소 값이 높은 경우 right
 			p = &(*p)->rb_right;
-		else
+		else // 정말 그럴 일 없겠지만, 메모리 주소가 같은 경우 에러 처리
 			BUG();
 	}
 
-	rb_link_node(&va->rb_node, parent, p);
+	rb_link_node(&va->rb_node, parent, p); 
 	rb_insert_color(&va->rb_node, &vmap_area_root);
 
 	/* address-sort this list */
@@ -353,6 +357,9 @@ static struct vmap_area *alloc_vmap_area(unsigned long size,
 				unsigned long vstart, unsigned long vend,
 				int node, gfp_t gfp_mask)
 {
+	/**
+	 * @brief vmap_area를 할당함
+	 */
 	struct vmap_area *va;
 	struct rb_node *n;
 	unsigned long addr;
@@ -480,19 +487,14 @@ static void __free_vmap_area(struct vmap_area *va)
 {
 	BUG_ON(RB_EMPTY_NODE(&va->rb_node));
 
-	if (free_vmap_cache) { // 마지막으로 사용한 free_vmap_cache 가 있는 경우, 삭제될때는 삭제한 이전 노드를 가리키게 합니다.
+	if (free_vmap_cache) {
 		if (va->va_end < cached_vstart) {
 			free_vmap_cache = NULL;
 		} else {
 			struct vmap_area *cache;
 			cache = rb_entry(free_vmap_cache, struct vmap_area, rb_node);
-
-			// |----------cached----------prev-va---free-va-------------|
-			//              ㄴ free_vmap_cahced
-			// |-----prev-va----free-va--------------cached----------|
-			//         ㄴ free_vmap_cahced
-			if (va->va_start <= cache->va_start) {       // 더 작은 주소에 있는 노드를 free_vmap_cached 로 설정
-				free_vmap_cache = rb_prev(&va->rb_node); // 삭제되는 va 의 이전 노드 값으로 free_vmap_cache 를 설정
+			if (va->va_start <= cache->va_start) {
+				free_vmap_cache = rb_prev(&va->rb_node);
 				/*
 				 * We don't try to update cached_hole_size or
 				 * cached_align, but it won't go very wrong.
@@ -574,7 +576,7 @@ static unsigned long lazy_max_pages(void)
 {
 	unsigned int log;
 
-	log = fls(num_online_cpus()); // 1 -> 1, 2 ~ 3 -> 2, 4 ~ 7 -> 3
+	log = fls(num_online_cpus());
 
 	return log * (32UL * 1024 * 1024 / PAGE_SIZE);
 }
@@ -618,31 +620,31 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 	 * the case that isn't actually used at the moment anyway.
 	 */
 	if (!sync && !force_flush) {
-		if (!spin_trylock(&purge_lock)) // (!sync && !force flush)  락을 시도하고, 락을 잡지 못하면 처리하지 않음
+		if (!spin_trylock(&purge_lock))
 			return;
 	} else
-		spin_lock(&purge_lock);         // sync 이거나 force flush 일때는 락을 잡을때까지 시도
+		spin_lock(&purge_lock);
 
 	if (sync)
-		purge_fragmented_blocks_allcpus(); // vm_map_ram 을 사용해서 만들었던 vmap_block 을 사용할때 사용하는 코드로 3절에서 크게 다루지 않음
+		purge_fragmented_blocks_allcpus();
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(va, &vmap_area_list, list) {
-		if (va->flags & VM_LAZY_FREE) { // 지연 삭제 플래그를 설정해둔 vm_area 에 대해서 처리
+		if (va->flags & VM_LAZY_FREE) {
 			if (va->va_start < *start)
 				*start = va->va_start;
 			if (va->va_end > *end)
 				*end = va->va_end;
-			nr += (va->va_end - va->va_start) >> PAGE_SHIFT; // 삭제하는 페이지의 갯수
-			list_add_tail(&va->purge_list, &valist);         // 삭제할 vm_area 를 list 에 추가
-			va->flags |= VM_LAZY_FREEING;                    // 지연삭제를 진행중인 플래그 설정
-			va->flags &= ~VM_LAZY_FREE;                      // 지연삭제 예정 플레그를 제거
+			nr += (va->va_end - va->va_start) >> PAGE_SHIFT;
+			list_add_tail(&va->purge_list, &valist);
+			va->flags |= VM_LAZY_FREEING;
+			va->flags &= ~VM_LAZY_FREE;
 		}
 	}
 	rcu_read_unlock();
 
 	if (nr)
-		atomic_sub(nr, &vmap_lazy_nr); // 전체 삭제예정인 페이지 갯수에서, 삭제할 페이지 갯수만큼 빼기
+		atomic_sub(nr, &vmap_lazy_nr);
 
 	if (nr || force_flush)
 		flush_tlb_kernel_range(*start, *end);
@@ -650,7 +652,7 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 	if (nr) {
 		spin_lock(&vmap_area_lock);
 		list_for_each_entry_safe(va, n_va, &valist, purge_list)
-			__free_vmap_area(va); // free_vmap_area 를 변경하고, va 를 지운다
+			__free_vmap_area(va);
 		spin_unlock(&vmap_area_lock);
 	}
 	spin_unlock(&purge_lock);
@@ -684,10 +686,10 @@ static void purge_vmap_area_lazy(void)
  */
 static void free_vmap_area_noflush(struct vmap_area *va)
 {
-	va->flags |= VM_LAZY_FREE;                                             // 지연 삭제 플래그를 설정
-	atomic_add((va->va_end - va->va_start) >> PAGE_SHIFT, &vmap_lazy_nr);  // 지연 삭제할 페이지를 더함
-	if (unlikely(atomic_read(&vmap_lazy_nr) > lazy_max_pages()))           // 미리 정해둔 한도를 넘었을때
-		try_purge_vmap_area_lazy();                                        // 지연 예약했던페이지를 삭제
+	va->flags |= VM_LAZY_FREE;
+	atomic_add((va->va_end - va->va_start) >> PAGE_SHIFT, &vmap_lazy_nr);
+	if (unlikely(atomic_read(&vmap_lazy_nr) > lazy_max_pages()))
+		try_purge_vmap_area_lazy();
 }
 
 /*
@@ -696,7 +698,7 @@ static void free_vmap_area_noflush(struct vmap_area *va)
  */
 static void free_unmap_vmap_area_noflush(struct vmap_area *va)
 {
-	unmap_vmap_area(va);  // 가상주소 --> 물리주소 매핑을 페이지 테이블에서 해제
+	unmap_vmap_area(va);
 	free_vmap_area_noflush(va);
 }
 
@@ -705,7 +707,7 @@ static void free_unmap_vmap_area_noflush(struct vmap_area *va)
  */
 static void free_unmap_vmap_area(struct vmap_area *va)
 {
-	flush_cache_vunmap(va->va_start, va->va_end); // ARM 64 에서는 캐시 타입이 PIPT 이기 때문에 캐시를 플러시 하지 않음
+	flush_cache_vunmap(va->va_start, va->va_end);
 	free_unmap_vmap_area_noflush(va);
 }
 
@@ -899,58 +901,30 @@ static void purge_fragmented_blocks(int cpu)
 	struct vmap_block *n_vb;
 	struct vmap_block_queue *vbq = &per_cpu(vmap_block_queue, cpu);
 
-	// cpu1  cpu2  cpu3
-	//  |     |     |
-	// vbq   vbq   vbq
-	//  |     |     |
-	// vb    vb     vb   // -> vbq->free
-	//  |
-	//  vb   
-	//  |
-	//  vb
-
 	rcu_read_lock();
 	list_for_each_entry_rcu(vb, &vbq->free, free_list) {
-		// vmap_block 추측
-		//
-		// 맨 처음 상태
-		// free =  000000
-		// dirty = 100000
-		//
-        // 1비트에 있는 페이지를 할당
-		// free =  011110
-		// dirty = 000000
-		//
-		// 1비트에 있는 페이지를 free 할때
-		// free =  011110
-		// dirty = 000001
-		if (!(
-			vb->free + vb->dirty == VMAP_BBMAP_BITS && // 할당을 한 후에 아직 free 되지 않은 페이지가 남아있는 상태
-			vb->dirty != VMAP_BBMAP_BITS               // 초기화후 아직 무언가 하지 않은 상태
-		))
+
+		if (!(vb->free + vb->dirty == VMAP_BBMAP_BITS && vb->dirty != VMAP_BBMAP_BITS))
 			continue;
 
 		spin_lock(&vb->lock);
-		if (
-			vb->free + vb->dirty == VMAP_BBMAP_BITS && // 할당했던 페이지가 모두 free 된 상태 이고
-			vb->dirty != VMAP_BBMAP_BITS               // 초기화 하고 한번이라도 사용한상태
-		) {
+		if (vb->free + vb->dirty == VMAP_BBMAP_BITS && vb->dirty != VMAP_BBMAP_BITS) {
 			vb->free = 0; /* prevent further allocs after releasing lock */
 			vb->dirty = VMAP_BBMAP_BITS; /* prevent purging it again */
 			vb->dirty_min = 0;
 			vb->dirty_max = VMAP_BBMAP_BITS;
 			spin_lock(&vbq->lock);
-			list_del_rcu(&vb->free_list); // vb 를 리스트에서 제거
+			list_del_rcu(&vb->free_list);
 			spin_unlock(&vbq->lock);
 			spin_unlock(&vb->lock);
-			list_add_tail(&vb->purge, &purge); // vb 에 있는 purge 제거하기 위해 리스트에 넣어둔다
+			list_add_tail(&vb->purge, &purge);
 		} else
 			spin_unlock(&vb->lock);
 	}
 	rcu_read_unlock();
 
 	list_for_each_entry_safe(vb, n_vb, &purge, purge) {
-		list_del(&vb->purge); // purge 에 있는 list 를 돌면서 vb 제거
+		list_del(&vb->purge);
 		free_vmap_block(vb);
 	}
 }
@@ -1229,35 +1203,41 @@ void __init vm_area_register_early(struct vm_struct *vm, size_t align)
 
 void __init vmalloc_init(void)
 {
+	/**
+	 * @brief vmalloc initialize 함수
+	 * @details
+	 *  1. 각 cpu 를 순회하면서 vmap_blcok_queue, vfree_deferred 구조체 초기화
+	 *  2. vmlist를 순회하며 vmap_area를 할당받고 이를 root node에 rbtree로 등록
+	 */
 	struct vmap_area *va;
 	struct vm_struct *tmp;
 	int i;
 
-	for_each_possible_cpu(i) {
+	for_each_possible_cpu(i) { // 사용 가능한 cpu 별로 looping
 		struct vmap_block_queue *vbq;
 		struct vfree_deferred *p;
 
-		vbq = &per_cpu(vmap_block_queue, i);
-		spin_lock_init(&vbq->lock);
-		INIT_LIST_HEAD(&vbq->free);
-		p = &per_cpu(vfree_deferred, i);
-		init_llist_head(&p->list);
-		INIT_WORK(&p->wq, free_work);
+		vbq = &per_cpu(vmap_block_queue, i); // 해당 cpu의 vmap_block_queue를 가져옴
+		spin_lock_init(&vbq->lock); // spinlock initialize
+		INIT_LIST_HEAD(&vbq->free); // 할당 및 플러시 목적의 free 리스트 initialize
+		p = &per_cpu(vfree_deferred, i); // 해당 cpu의 vfree_deferred 를 가져옴
+		init_llist_head(&p->list); // vfree 지연 목적의 list initialize
+		INIT_WORK(&p->wq, free_work); // work queue initialize
 	}
 
 	/* Import existing vmlist entries. */
-	for (tmp = vmlist; tmp; tmp = tmp->next) {
-		va = kzalloc(sizeof(struct vmap_area), GFP_NOWAIT);
+	for (tmp = vmlist; tmp; tmp = tmp->next) { // vmlist를 순회
+		va = kzalloc(sizeof(struct vmap_area), GFP_NOWAIT); // vmap_area 할당
 		va->flags = VM_VM_AREA;
-		va->va_start = (unsigned long)tmp->addr;
+		va->va_start = (unsigned long)tmp->addr; // vmlist 주소 값 입력
 		va->va_end = va->va_start + tmp->size;
 		va->vm = tmp;
-		__insert_vmap_area(va);
+		__insert_vmap_area(va); // vmap_area를 전역 vmap_area_list에 추가 (rb_tree)
 	}
 
-	vmap_area_pcpu_hole = VMALLOC_END;
+	vmap_area_pcpu_hole = VMALLOC_END; // vmap 초기화 플래그 설정
 
-	vmap_initialized = true;
+	vmap_initialized = true; // initialize 플래그 설정
 }
 
 /**
@@ -1325,6 +1305,9 @@ EXPORT_SYMBOL_GPL(unmap_kernel_range);
 
 int map_vm_area(struct vm_struct *area, pgprot_t prot, struct page **pages)
 {
+	/**
+	 * @brief vm_struct 에 pages 를 mapping
+	 */
 	unsigned long addr = (unsigned long)area->addr;
 	unsigned long end = addr + get_vm_area_size(area);
 	int err;
@@ -1344,7 +1327,7 @@ static void setup_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
 	vm->size = va->va_end - va->va_start;
 	vm->caller = caller;
 	va->vm = vm;
-	va->flags |= VM_VM_AREA;
+	va->flags |= VM_VM_AREA;														// VM_VM_AREA 로 설정된 경우 사용 중
 	spin_unlock(&vmap_area_lock);
 }
 
@@ -1363,6 +1346,12 @@ static struct vm_struct *__get_vm_area_node(unsigned long size,
 		unsigned long align, unsigned long flags, unsigned long start,
 		unsigned long end, int node, gfp_t gfp_mask, const void *caller)
 {
+	/**
+	 * @brief 가상 주소 범위 내에서 요청 size가 들어갈 수 있는 빈자리를 찾아 가상 주소로 vmap_area, vm_struct를 구성하여 리턴함
+	 * @return
+	 *  vm_struct* - Pass
+	 *  NULL - Fail
+	 */
 	struct vmap_area *va;
 	struct vm_struct *area;
 
@@ -1463,13 +1452,13 @@ struct vm_struct *remove_vm_area(const void *addr)
 {
 	struct vmap_area *va;
 
-	va = find_vmap_area((unsigned long)addr);
-	if (va && va->flags & VM_VM_AREA) {
-		struct vm_struct *vm = va->vm;
+	va = find_vmap_area((unsigned long)addr);											// RB-Tree에서 vmap_area를 찾는다.
+	if (va && va->flags & VM_VM_AREA) {													// vmap_area가 사용 중인지 확인 (vm->flags == VM_VM_AREA인 경우 사용중)
+		struct vm_struct *vm = va->vm;												
 
 		spin_lock(&vmap_area_lock);
-		va->vm = NULL;
-		va->flags &= ~VM_VM_AREA;
+		va->vm = NULL;																	// va->vm 초기화
+		va->flags &= ~VM_VM_AREA;														// va->flags VM_VM_AREA 플래그 초기화
 		spin_unlock(&vmap_area_lock);
 
 		vmap_debug_free_range(va->va_start, va->va_end);
@@ -1483,6 +1472,9 @@ struct vm_struct *remove_vm_area(const void *addr)
 
 static void __vunmap(const void *addr, int deallocate_pages)
 {
+	/**
+	 * @brief 입력한 address 를 할당 해제
+	 */
 	struct vm_struct *area;
 
 	if (!addr)
@@ -1492,7 +1484,7 @@ static void __vunmap(const void *addr, int deallocate_pages)
 			addr))
 		return;
 
-	area = remove_vm_area(addr);
+	area = remove_vm_area(addr);												// vm_area 에서 addr을 찾아 할당 해제, vm_struct 리턴
 	if (unlikely(!area)) {
 		WARN(1, KERN_ERR "Trying to vfree() nonexistent vm area (%p)\n",
 				addr);
@@ -1502,20 +1494,20 @@ static void __vunmap(const void *addr, int deallocate_pages)
 	debug_check_no_locks_freed(addr, get_vm_area_size(area));
 	debug_check_no_obj_freed(addr, get_vm_area_size(area));
 
-	if (deallocate_pages) {
+	if (deallocate_pages) {														// 페이지 할당 해제 플래그가 있는 경우 
 		int i;
 
 		for (i = 0; i < area->nr_pages; i++) {
 			struct page *page = area->pages[i];
 
 			BUG_ON(!page);
-			__free_kmem_pages(page, 0);
+			__free_kmem_pages(page, 0);											// vm_struct 내부 page 할당 해제
 		}
 
-		kvfree(area->pages);
+		kvfree(area->pages);													// vm_struct pages 할당 해제
 	}
 
-	kfree(area);
+	kfree(area);																// vm_struct 할당 해제
 	return;
 }
  
@@ -1535,18 +1527,22 @@ static void __vunmap(const void *addr, int deallocate_pages)
  */
 void vfree(const void *addr)
 {
+	/**
+	 * @brief 메모리 할당을 해제한다.
+	 * @param[in] addr 할당 해제할 메모리 주소
+	 */
 	BUG_ON(in_nmi());
 
-	kmemleak_free(addr);
+	kmemleak_free(addr); // memory leak 체크
 
-	if (!addr)
+	if (!addr) // 할당되지 않은 메모리일 경우
 		return;
-	if (unlikely(in_interrupt())) {
+	if (unlikely(in_interrupt())) { // 인터럽트 핸들러에서 호출된 경우
 		struct vfree_deferred *p = this_cpu_ptr(&vfree_deferred);
-		if (llist_add((struct llist_node *)addr, &p->list))
-			schedule_work(&p->wq);
+		if (llist_add((struct llist_node *)addr, &p->list)) // 추후 처리를 위해 vfree_deferred list에 추가
+			schedule_work(&p->wq); // free_work 함수 스케줄링
 	} else
-		__vunmap(addr, 1);
+		__vunmap(addr, 1); // 메모리 할당 해제
 }
 EXPORT_SYMBOL(vfree);
 
@@ -1608,57 +1604,68 @@ static void *__vmalloc_node(unsigned long size, unsigned long align,
 static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 				 pgprot_t prot, int node)
 {
+	/**
+	 * @brief 할당받은 vm_struct 에 pages 를 mapping
+	 * @param[in] area page를 할당할 vm_struct
+	 * @param[in] gfp_mask page 할당에 사용할 mask
+	 * @param[in] prot 메모리 권한
+	 * @param[in] node node id
+	 * @return
+	 *  vm_struct->area - Pass
+	 *  null - Fail
+	 */
 	const int order = 0;
 	struct page **pages;
 	unsigned int nr_pages, array_size, i;
-	const gfp_t nested_gfp = (gfp_mask & GFP_RECLAIM_MASK) | __GFP_ZERO;
-	const gfp_t alloc_mask = gfp_mask | __GFP_NOWARN;
+	const gfp_t nested_gfp = (gfp_mask & GFP_RECLAIM_MASK) | __GFP_ZERO; // 페이지 회수와 관련된 마스크만 남김, GFP_RECLAIM_MASK, GRP_ZERO만 사용
+	const gfp_t alloc_mask = gfp_mask | __GFP_NOWARN; // NOWARN 설정
 
-	nr_pages = get_vm_area_size(area) >> PAGE_SHIFT;
-	array_size = (nr_pages * sizeof(struct page *));
+	nr_pages = get_vm_area_size(area) >> PAGE_SHIFT; // 할당할 page 개수를 계산
+	array_size = (nr_pages * sizeof(struct page *)); // page 배열의 사이즈를 구한다.
 
-	area->nr_pages = nr_pages;
+	area->nr_pages = nr_pages; // page 개수 입력
 	/* Please note that the recursion is strictly bounded. */
 	if (array_size > PAGE_SIZE) {
-		pages = __vmalloc_node(array_size, 1, nested_gfp|__GFP_HIGHMEM,
+		pages = __vmalloc_node(array_size, 1, nested_gfp|__GFP_HIGHMEM, // 재귀 호출, page 개수가 부족하므로 추가적으로 할당 받아옴
 				PAGE_KERNEL, node, area->caller);
 	} else {
-		pages = kmalloc_node(array_size, nested_gfp, node);
+		pages = kmalloc_node(array_size, nested_gfp, node); // 슬럽 객체를 할당받아 page 구조체 배열을 구성
 	}
-	area->pages = pages;
-	if (!area->pages) {
-		remove_vm_area(area->addr);
-		kfree(area);
+	area->pages = pages; // 할당 받아온 page를 vm_struct에 입력
+	if (!area->pages) { // 할당에 실패한 경우 해당 vm_struct를 할당 해제
+		remove_vm_area(area->addr); // root 에서 제거
+		kfree(area); // 할당 해제
 		return NULL;
 	}
-
-	for (i = 0; i < area->nr_pages; i++) {
+// ... 4-160
+	for (i = 0; i < area->nr_pages; i++) { // page 개수만큼 루프를 돌며 할당 진행
 		struct page *page;
 
+		// buddy system으로 page 할당
 		if (node == NUMA_NO_NODE)
-			page = alloc_kmem_pages(alloc_mask, order);
+			page = alloc_kmem_pages(alloc_mask, order); // node가 없는 경우
 		else
-			page = alloc_kmem_pages_node(node, alloc_mask, order);
+			page = alloc_kmem_pages_node(node, alloc_mask, order); // node가 있는 경우
 
-		if (unlikely(!page)) {
+		if (unlikely(!page)) { // 할당이 실패한 경우
 			/* Successfully allocated i pages, free them in __vunmap() */
-			area->nr_pages = i;
-			goto fail;
+			area->nr_pages = i; // 할당 성공한 개수로 page 개수 업데이트
+			goto fail; // Fail case
 		}
-		area->pages[i] = page;
-		if (gfpflags_allow_blocking(gfp_mask))
-			cond_resched();
+		area->pages[i] = page; // pages 배열 초기화
+		if (gfpflags_allow_blocking(gfp_mask)) // RECLAIM Flag가 있는 경우
+			cond_resched();  // process rescheduling
 	}
 
-	if (map_vm_area(area, prot, pages))
+	if (map_vm_area(area, prot, pages)) // vm_struct 에 pages를 매핑
 		goto fail;
-	return area->addr;
+	return area->addr; // area 리턴
 
 fail:
-	warn_alloc_failed(gfp_mask, order,
+	warn_alloc_failed(gfp_mask, order, // NOWARN 플래그가 없을 경우 warning message 출력
 			  "vmalloc: allocation failure, allocated %ld of %ld bytes\n",
 			  (area->nr_pages*PAGE_SIZE), area->size);
-	vfree(area->addr);
+	vfree(area->addr); // 할당받았던 area 할당 해제
 	return NULL;
 }
 
@@ -1683,20 +1690,26 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 			pgprot_t prot, unsigned long vm_flags, int node,
 			const void *caller)
 {
+	/**
+	 * @brief 지정된 노드에서 가상 메모리를 할당받아 리턴
+	 * @return
+	 *  ptr* - Pass (타입 없이 메모리 시작 주소)
+	 *  null - Fail
+	 */
 	struct vm_struct *area;
 	void *addr;
 	unsigned long real_size = size;
 
 	size = PAGE_ALIGN(size);
-	if (!size || (size >> PAGE_SHIFT) > totalram_pages)
+	if (!size || (size >> PAGE_SHIFT) > totalram_pages) // size 유효성 검사
 		goto fail;
 
-	area = __get_vm_area_node(size, align, VM_ALLOC | VM_UNINITIALIZED |
+	area = __get_vm_area_node(size, align, VM_ALLOC | VM_UNINITIALIZED | // 사용 가능한 가상 메모리 영역을 vm_struct로 할당 받음
 				vm_flags, start, end, node, gfp_mask, caller);
 	if (!area)
 		goto fail;
 
-	addr = __vmalloc_area_node(area, gfp_mask, prot, node);
+	addr = __vmalloc_area_node(area, gfp_mask, prot, node); // TODO) 4-159
 	if (!addr)
 		return NULL;
 
@@ -1705,16 +1718,16 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	 * flag. It means that vm_struct is not fully initialized.
 	 * Now, it is fully initialized, so remove this flag here.
 	 */
-	clear_vm_uninitialized_flag(area);
+	clear_vm_uninitialized_flag(area); // 할당받은 vm_struct에서 VM_UNITIALIZED 플래그 제거
 
 	/*
 	 * A ref_count = 2 is needed because vm_struct allocated in
 	 * __get_vm_area_node() contains a reference to the virtual address of
 	 * the vmalloc'ed block.
 	 */
-	kmemleak_alloc(addr, real_size, 2, gfp_mask);
+	kmemleak_alloc(addr, real_size, 2, gfp_mask); // 메모리 누수 체크
 
-	return addr;
+	return addr; // 할당받은 가상메모리 시작 주소
 
 fail:
 	warn_alloc_failed(gfp_mask, 0,

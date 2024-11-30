@@ -465,12 +465,17 @@ static __always_inline void *kmalloc_large(size_t size, gfp_t flags)
  */
 static __always_inline void *kmalloc(size_t size, gfp_t flags)
 {
+	/**
+	 * @brief
+	 * @param[in] size
+	 * @param[in] flags
+	 */
 	if (__builtin_constant_p(size)) {
 		if (size > KMALLOC_MAX_CACHE_SIZE)
-			return kmalloc_large(size, flags);
+			return kmalloc_large(size, flags); // TODO 4-153)
 #ifndef CONFIG_SLOB
 		if (!(flags & GFP_DMA)) {
-			int index = kmalloc_index(size);
+			int index = kmalloc_index(size); // TODO 4-154)
 
 			if (!index)
 				return ZERO_SIZE_PTR;

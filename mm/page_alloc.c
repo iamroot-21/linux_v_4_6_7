@@ -3690,11 +3690,19 @@ EXPORT_SYMBOL(__free_page_frag);
  */
 struct page *alloc_kmem_pages(gfp_t gfp_mask, unsigned int order)
 {
+	/**
+	 * @brief buddy system으로 페이지 할당
+	 * @param[in] gfp_mask 할당에 사용할 mask 값
+	 * @param[in] order order 값
+ 	 * @return
+	 *  *page - Pass
+	 *  null - Fail
+	 */
 	struct page *page;
 
-	page = alloc_pages(gfp_mask, order);
-	if (page && memcg_kmem_charge(page, gfp_mask, order) != 0) {
-		__free_pages(page, order);
+	page = alloc_pages(gfp_mask, order); // buddy sytem으로 페이지 할당
+	if (page && memcg_kmem_charge(page, gfp_mask, order) != 0) { // memcg에 page 등록
+		__free_pages(page, order); // memcg 등록이 불가능한 경우 할당 해제
 		page = NULL;
 	}
 	return page;

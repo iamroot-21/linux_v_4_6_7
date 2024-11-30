@@ -3534,19 +3534,27 @@ EXPORT_SYMBOL(__kmalloc_node_track_caller);
 static __always_inline void *__do_kmalloc(size_t size, gfp_t flags,
 					  unsigned long caller)
 {
+	/**
+	 * @param[in] size 할당할 사이즈
+	 * @param[in] flags 할당할 때 사용할 flag
+	 * @param[in] caller return address
+	 * @return
+	 *  ptr - Pass
+	 *  null - Fail
+	 */
 	struct kmem_cache *cachep;
 	void *ret;
 
-	cachep = kmalloc_slab(size, flags);
-	if (unlikely(ZERO_OR_NULL_PTR(cachep)))
-		return cachep;
-	ret = slab_alloc(cachep, flags, caller);
+	cachep = kmalloc_slab(size, flags); // TODO) 4-155 할당에 사용할 index 값을 계산
+	if (unlikely(ZERO_OR_NULL_PTR(cachep))) // cachep가 null 이거나 0일 경우
+		return cachep; // Fail
+	ret = slab_alloc(cachep, flags, caller); // slab 할당 진행 (확인 필요)
 
-	kasan_kmalloc(cachep, ret, size, flags);
-	trace_kmalloc(caller, ret,
+	kasan_kmalloc(cachep, ret, size, flags); // 디버깅 코드
+	trace_kmalloc(caller, ret, // 디버깅 코드
 		      size, cachep->size, flags);
 
-	return ret;
+	return ret; // slab 할당 받은 주소 값 리턴
 }
 
 void *__kmalloc(size_t size, gfp_t flags)

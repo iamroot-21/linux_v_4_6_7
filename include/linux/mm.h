@@ -509,9 +509,9 @@ static inline int total_mapcount(struct page *page)
 
 static inline struct page *virt_to_head_page(const void *x)
 {
-	struct page *page = virt_to_page(x);
+	struct page *page = virt_to_page(x); // virt -> pfn -> page
 
-	return compound_head(page);
+	return compound_head(page); // compound page 처리 포함하여 page 리턴
 }
 
 void __put_page(struct page *page);

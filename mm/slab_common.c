@@ -876,27 +876,35 @@ static inline int size_index_elem(size_t bytes)
  */
 struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 {
+	/**
+	 * @brief size 값으로 적절한 kmem_cache 배열에 사용할 index 값을 구한 뒤, kmalloc_caches 에서 index에 해당하는 kmem_cache 포인터를 리턴한다.
+	 * @param[in] size 할당할 사이즈
+	 * @param[in] flags 할당 flags
+	 * @return
+	 *  kmem_cache* - Pass  
+	 *  ZERO_SIZE_PTR, NULL - Fail
+	 */
 	int index;
 
-	if (unlikely(size > KMALLOC_MAX_SIZE)) {
-		WARN_ON_ONCE(!(flags & __GFP_NOWARN));
-		return NULL;
+	if (unlikely(size > KMALLOC_MAX_SIZE)) { // Malloc 최대 사이즈를 넘어가는 경우
+		WARN_ON_ONCE(!(flags & __GFP_NOWARN)); // NOWARN 플래그가 없는 경우 WARN 발생
+		return NULL; // Fail
 	}
 
 	if (size <= 192) {
-		if (!size)
-			return ZERO_SIZE_PTR;
+		if (!size) // size가 192 이하인 경우에는 size_index 테이블을 사용한다.
+			return ZERO_SIZE_PTR; // Fail
 
-		index = size_index[size_index_elem(size)];
+		index = size_index[size_index_elem(size)]; // size index 값 계산
 	} else
-		index = fls(size - 1);
+		index = fls(size - 1); // 필요한 비트수 계산
 
 #ifdef CONFIG_ZONE_DMA
-	if (unlikely((flags & GFP_DMA)))
-		return kmalloc_dma_caches[index];
+	if (unlikely((flags & GFP_DMA))) // DMA zone을 사용하는 경우
+		return kmalloc_dma_caches[index]; // DMA Cache index 값 리턴
 
 #endif
-	return kmalloc_caches[index];
+	return kmalloc_caches[index]; // cache에서 지정된 index 값 리턴
 }
 
 /*
@@ -1029,14 +1037,22 @@ void __init create_kmalloc_caches(unsigned long flags)
  */
 void *kmalloc_order(size_t size, gfp_t flags, unsigned int order)
 {
+	/**
+	 * @param[in] size 할당할 사이즈
+	 * @param[in] flags 할당할 때 사용할 flag
+	 * @param[in] order memory order
+	 * @return
+	 *  *page - Pass
+	 *  null - Fail
+	 */
 	void *ret;
 	struct page *page;
 
-	flags |= __GFP_COMP;
-	page = alloc_kmem_pages(flags, order);
-	ret = page ? page_address(page) : NULL;
-	kmemleak_alloc(ret, size, 1, flags);
-	kasan_kmalloc_large(ret, size, flags);
+	flags |= __GFP_COMP; // 메타데이터 또는 연속된 복합 페이지를 구성하도록 요청
+	page = alloc_kmem_pages(flags, order); // TODO) 4-153
+	ret = page ? page_address(page) : NULL; // 페이지가 정상적으로 할당되었는 지 확인
+	kmemleak_alloc(ret, size, 1, flags); // 새로 할당한 페이지를 object로 등록
+	kasan_kmalloc_large(ret, size, flags); // 디버깅 코드
 	return ret;
 }
 EXPORT_SYMBOL(kmalloc_order);

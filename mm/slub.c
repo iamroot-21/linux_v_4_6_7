@@ -1606,8 +1606,11 @@ static void free_slab(struct kmem_cache *s, struct page *page)
 
 static void discard_slab(struct kmem_cache *s, struct page *page)
 {
-	dec_slabs_node(s, page_to_nid(page), page->objects);
-	free_slab(s, page);
+	/**
+	 * @brief page를 할당 해제한 뒤 버디 시스템에 반환
+	 */
+	dec_slabs_node(s, page_to_nid(page), page->objects); // slub node 개수 감소
+	free_slab(s, page); // page 할당 해제
 }
 
 /*
@@ -2064,19 +2067,20 @@ static void unfreeze_partials(struct kmem_cache *s,
 		struct page new;
 		struct page old;
 
-		c->partial = page->next;
+		c->partial = page->next; // 루프 인덱스 업데이트
 
-		n2 = get_node(s, page_to_nid(page));
-		if (n != n2) {
-			if (n)
+		n2 = get_node(s, page_to_nid(page)); // node의 kmem_cache를 가져옴
+		if (n != n2) { // cache 불일치 하는 경우
+			if (n) // spin lock
 				spin_unlock(&n->list_lock);
 
-			n = n2;
-			spin_lock(&n->list_lock);
+			n = n2; // n값을 최신화
+			spin_lock(&n->list_lock); // spin unlock
 		}
 
-		do {
-
+		do { // page->frozen = 0
+			// old = page
+			// old = new = page ???
 			old.freelist = page->freelist;
 			old.counters = page->counters;
 			VM_BUG_ON(!old.frozen);
@@ -2084,32 +2088,31 @@ static void unfreeze_partials(struct kmem_cache *s,
 			new.counters = old.counters;
 			new.freelist = old.freelist;
 
-			new.frozen = 0;
-
-		} while (!__cmpxchg_double_slab(s, page,
+			new.frozen = 0; // frozen 만 unfrozen으로 변경하려고 하는 듯?
+		} while (!__cmpxchg_double_slab(s, page, // page->freelist = new.freelist
 				old.freelist, old.counters,
 				new.freelist, new.counters,
 				"unfreezing slab"));
-
-		if (unlikely(!new.inuse && n->nr_partial >= s->min_partial)) {
-			page->next = discard_page;
-			discard_page = page;
+// 4-150) ...
+		if (unlikely(!new.inuse && n->nr_partial >= s->min_partial)) { // new page가 사용 중이 아니면서 kmem_cache가 최소 partial 개수를 넘기는 경우
+			page->next = discard_page; // 해당 페이지를 마지막으로 기록, 해당 코드 이후로 루프 종료
+			discard_page = page; // 해제할 page 기록
 		} else {
-			add_partial(n, page, DEACTIVATE_TO_TAIL);
-			stat(s, FREE_ADD_PARTIAL);
+			add_partial(n, page, DEACTIVATE_TO_TAIL); // node cache 의 partial list 끝에 page를 추가
+			stat(s, FREE_ADD_PARTIAL); // FREE_ADD_PARTIAL stat 증가
 		}
 	}
 
 	if (n)
-		spin_unlock(&n->list_lock);
+		spin_unlock(&n->list_lock); // spin unlock
 
 	while (discard_page) {
-		page = discard_page;
+		page = discard_page; // page index 업데이트
 		discard_page = discard_page->next;
 
-		stat(s, DEACTIVATE_EMPTY);
-		discard_slab(s, page);
-		stat(s, FREE_SLAB);
+		stat(s, DEACTIVATE_EMPTY); // DEDACTIVATE_EMPTY stat 증가
+		discard_slab(s, page); // slub 할당 해제
+		stat(s, FREE_SLAB); // FREE_SLAB stat 증가
 	}
 #endif
 }
@@ -3669,24 +3672,32 @@ __setup("slub_min_objects=", setup_slub_min_objects);
 
 void *__kmalloc(size_t size, gfp_t flags)
 {
+	/**
+	 * @brief kmalloc 할당을 진행
+	 * @param[in] size 할당할 사이즈
+	 * @param[in] flags 할당할 때 사용할 flag
+	 * @return
+	 *  slub* - Pass
+	 *  null, ZERO_SIZE_PTR - Fail
+	 */
 	struct kmem_cache *s;
 	void *ret;
 
 	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
 		return kmalloc_large(size, flags);
 
-	s = kmalloc_slab(size, flags);
+	s = kmalloc_slab(size, flags); // size, flags에 적절한 kmem_cache를 찾아 리턴
 
-	if (unlikely(ZERO_OR_NULL_PTR(s)))
+	if (unlikely(ZERO_OR_NULL_PTR(s))) // 찾는데 실패한 경우
 		return s;
 
-	ret = slab_alloc(s, flags, _RET_IP_);
+	ret = slab_alloc(s, flags, _RET_IP_); // 받아온 kmem_cache로 slub 할당 진행
 
-	trace_kmalloc(_RET_IP_, ret, size, s->size, flags);
+	trace_kmalloc(_RET_IP_, ret, size, s->size, flags); // 디버깅 코드
 
-	kasan_kmalloc(s, ret, size, flags);
+	kasan_kmalloc(s, ret, size, flags); // 디버깅 코드
 
-	return ret;
+	return ret; // 할당받은 slub 객체 리턴
 }
 EXPORT_SYMBOL(__kmalloc);
 
@@ -3765,22 +3776,26 @@ EXPORT_SYMBOL(ksize);
 
 void kfree(const void *x)
 {
+	/**
+	 * @brief 입력한 x를 할당 해제
+	 * @param[in,out] x 할당 해제할 주소
+	 */
 	struct page *page;
 	void *object = (void *)x;
 
-	trace_kfree(_RET_IP_, x);
+	trace_kfree(_RET_IP_, x); // 디버깅 코드
 
-	if (unlikely(ZERO_OR_NULL_PTR(x)))
+	if (unlikely(ZERO_OR_NULL_PTR(x))) // 할당된 메모리가 아닌 경우
 		return;
 
-	page = virt_to_head_page(x);
-	if (unlikely(!PageSlab(page))) {
-		BUG_ON(!PageCompound(page));
-		kfree_hook(x);
-		__free_kmem_pages(page, compound_order(page));
+	page = virt_to_head_page(x); // 가상 메모리에서 페이지 주소로 변경
+	if (unlikely(!PageSlab(page))) { // slub 객체가 아닌 경우
+		BUG_ON(!PageCompound(page)); // compounded page가 아닌 경우
+		kfree_hook(x); // 디버깅 코드
+		__free_kmem_pages(page, compound_order(page)); // buddy system 에서 할당 해제
 		return;
 	}
-	slab_free(page->slab_cache, page, object, NULL, 1, _RET_IP_);
+	slab_free(page->slab_cache, page, object, NULL, 1, _RET_IP_); // slub 할당 해제
 }
 EXPORT_SYMBOL(kfree);
 
