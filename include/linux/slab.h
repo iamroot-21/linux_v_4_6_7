@@ -274,6 +274,9 @@ extern struct kmem_cache *kmalloc_dma_caches[KMALLOC_SHIFT_HIGH + 1];
  */
 static __always_inline int kmalloc_index(size_t size)
 {
+	/**
+	 * @brief 64M 이하에서 size에 따른 index 값을 리턴한다.
+	 */
 	if (!size)
 		return 0;
 
@@ -467,25 +470,25 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 {
 	/**
 	 * @brief
-	 * @param[in] size
-	 * @param[in] flags
+	 * @param[in] size 할당할 사이즈
+	 * @param[in] flags 할당에 사용할 flag
 	 */
-	if (__builtin_constant_p(size)) {
-		if (size > KMALLOC_MAX_CACHE_SIZE)
+	if (__builtin_constant_p(size)) { // 요청 크기가 상수인 경우
+		if (size > KMALLOC_MAX_CACHE_SIZE) // KMALLOC_MAX_CACHE_SIZE를 넘기는 경우
 			return kmalloc_large(size, flags); // TODO 4-153)
 #ifndef CONFIG_SLOB
-		if (!(flags & GFP_DMA)) {
+		if (!(flags & GFP_DMA)) { // DMA 존 영역 할당이 아닌 경우
 			int index = kmalloc_index(size); // TODO 4-154)
 
-			if (!index)
+			if (!index) // 할당 실패 케이스
 				return ZERO_SIZE_PTR;
 
-			return kmem_cache_alloc_trace(kmalloc_caches[index],
+			return kmem_cache_alloc_trace(kmalloc_caches[index], // 슬럽 객체를 할당 받음
 					flags, size);
 		}
 #endif
 	}
-	return __kmalloc(size, flags);
+	return __kmalloc(size, flags); // kmalloc 할당 진행
 }
 
 /*

@@ -3777,8 +3777,11 @@ EXPORT_SYMBOL(ksize);
 void kfree(const void *x)
 {
 	/**
-	 * @brief 입력한 x를 할당 해제
+	 * @brief 입력한 x를 할당 해제한다
 	 * @param[in,out] x 할당 해제할 주소
+	 * @details
+	 *  slub 에서 할당한 경우 slub 에서 할당 해제
+	 *  buddy 에서 할당한 경우 buddy 에서 할당 해제 
 	 */
 	struct page *page;
 	void *object = (void *)x;
@@ -3790,7 +3793,7 @@ void kfree(const void *x)
 
 	page = virt_to_head_page(x); // 가상 메모리에서 페이지 주소로 변경
 	if (unlikely(!PageSlab(page))) { // slub 객체가 아닌 경우
-		BUG_ON(!PageCompound(page)); // compounded page가 아닌 경우
+		BUG_ON(!PageCompound(page)); // compound page가 아닌 경우
 		kfree_hook(x); // 디버깅 코드
 		__free_kmem_pages(page, compound_order(page)); // buddy system 에서 할당 해제
 		return;

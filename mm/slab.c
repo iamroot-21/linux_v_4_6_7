@@ -3540,7 +3540,7 @@ static __always_inline void *__do_kmalloc(size_t size, gfp_t flags,
 	 * @param[in] caller return address
 	 * @return
 	 *  ptr - Pass
-	 *  null - Fail
+	 *  null, 0 - Fail
 	 */
 	struct kmem_cache *cachep;
 	void *ret;
