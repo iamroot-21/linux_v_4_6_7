@@ -212,14 +212,14 @@ static int __pcpu_size_to_slot(int size)
 
 static int pcpu_size_to_slot(int size)
 {
-	if (size == pcpu_unit_size)
+	if (size == pcpu_unit_size) // 전체 사이즈 요청 케이스
 		return pcpu_nr_slots - 1;
 	return __pcpu_size_to_slot(size);
 }
 
 static int pcpu_chunk_slot(const struct pcpu_chunk *chunk)
 {
-	if (chunk->free_size < sizeof(int) || chunk->contig_hint < sizeof(int))
+	if (chunk->free_size < sizeof(int) || chunk->contig_hint < sizeof(int)) // 일정 사이즈 이하인 경우 slot이 없는 것으로 판정
 		return 0;
 
 	return pcpu_size_to_slot(chunk->free_size);
@@ -326,25 +326,25 @@ static void pcpu_mem_free(void *ptr)
  */
 static int pcpu_count_occupied_pages(struct pcpu_chunk *chunk, int i)
 {
-	int off = chunk->map[i] & ~1;
-	int end = chunk->map[i + 1] & ~1;
+	int off = chunk->map[i] & ~1; // map[i] 시작 지점의 offset
+	int end = chunk->map[i + 1] & ~1; // map[i]가 끝나는 지점
 
-	if (!PAGE_ALIGNED(off) && i > 0) {
+	if (!PAGE_ALIGNED(off) && i > 0) { // 0인 경우 out of index 이므로 예외처리
 		int prev = chunk->map[i - 1];
 
-		if (!(prev & 1) && prev <= round_down(off, PAGE_SIZE))
-			off = round_down(off, PAGE_SIZE);
+		if (!(prev & 1) && prev <= round_down(off, PAGE_SIZE)) // off 값이 page 단위로 정렬되지 않은 경우
+			off = round_down(off, PAGE_SIZE); // offset을 페이지 크기로 올림 정렬
 	}
 
-	if (!PAGE_ALIGNED(end) && i + 1 < chunk->map_used) {
-		int next = chunk->map[i + 1];
-		int nend = chunk->map[i + 2] & ~1;
+	if (!PAGE_ALIGNED(end) && i + 1 < chunk->map_used) { // index가 in_use가 아니면서 end가 다음 영역의 끝보다 작거나 같은 경우
+		int next = chunk->map[i + 1]; // 다음 map
+		int nend = chunk->map[i + 2] & ~1; // next의 end 지점
 
-		if (!(next & 1) && nend >= round_up(end, PAGE_SIZE))
+		if (!(next & 1) && nend >= round_up(end, PAGE_SIZE)) // next 값이 chunk 내에 있을 경우 page roundup
 			end = round_up(end, PAGE_SIZE);
 	}
 
-	return max_t(int, PFN_DOWN(end) - PFN_UP(off), 0);
+	return max_t(int, PFN_DOWN(end) - PFN_UP(off), 0); // off부터 end 까지의 page 수를 리턴
 }
 
 /**
@@ -362,13 +362,13 @@ static int pcpu_count_occupied_pages(struct pcpu_chunk *chunk, int i)
  */
 static void pcpu_chunk_relocate(struct pcpu_chunk *chunk, int oslot)
 {
-	int nslot = pcpu_chunk_slot(chunk);
+	int nslot = pcpu_chunk_slot(chunk); // chunk 내에서 slot 번호를 찾는다.
 
-	if (chunk != pcpu_reserved_chunk && oslot != nslot) {
+	if (chunk != pcpu_reserved_chunk && oslot != nslot) { // pcpu_slot[nslot] 리스트에 chunk를 추가
 		if (oslot < nslot)
-			list_move(&chunk->list, &pcpu_slot[nslot]);
+			list_move(&chunk->list, &pcpu_slot[nslot]); // &pcpu_slot[nslot].next = &chunk_list
 		else
-			list_move_tail(&chunk->list, &pcpu_slot[nslot]);
+			list_move_tail(&chunk->list, &pcpu_slot[nslot]); // pcpu_slot[nslot] tail에 chunk_list 추가
 	}
 }
 
@@ -393,29 +393,32 @@ static void pcpu_chunk_relocate(struct pcpu_chunk *chunk, int oslot)
  */
 static int pcpu_need_to_extend(struct pcpu_chunk *chunk, bool is_atomic)
 {
+	/**
+	 * @brief map 배열이 부족한지 확인하고 필요한 배열 수를 리턴함.
+	 */
 	int margin, new_alloc;
 
-	if (is_atomic) {
+	if (is_atomic) { // atomic case
 		margin = 3;
 
-		if (chunk->map_alloc <
+		if (chunk->map_alloc < // 맵이 사용된 수 + MARGIN 값이 현재 사용중인 맵 수 보다 큰 경우
 		    chunk->map_used + PCPU_ATOMIC_MAP_MARGIN_LOW &&
 		    pcpu_async_enabled)
-			schedule_work(&chunk->map_extend_work);
+			schedule_work(&chunk->map_extend_work); // 스케줄러에서 pcpu_map_extend_workfn 함수 실행
 	} else {
 		margin = PCPU_ATOMIC_MAP_MARGIN_HIGH;
 	}
 
-	if (chunk->map_alloc >= chunk->map_used + margin)
+	if (chunk->map_alloc >= chunk->map_used + margin) // 여유가 있는 경우
 		return 0;
 
-	new_alloc = PCPU_DFL_MAP_ALLOC;
-	while (new_alloc < chunk->map_used + margin)
+	new_alloc = PCPU_DFL_MAP_ALLOC; // 신규 할당할 사이즈는 고정 사이즈로 우선 설정
+	while (new_alloc < chunk->map_used + margin) // 사이즈 값이 작을 경우 커질 때까지 무한 루프
 		new_alloc *= 2;
 
 	return new_alloc;
 }
-
+-
 /**
  * pcpu_extend_area_map - extend area map of a chunk
  * @chunk: chunk of interest
@@ -431,6 +434,9 @@ static int pcpu_need_to_extend(struct pcpu_chunk *chunk, bool is_atomic)
  */
 static int pcpu_extend_area_map(struct pcpu_chunk *chunk, int new_alloc)
 {
+	/**
+	 * @brief 부족한 map size 만큼 새로 할당해 chunk에 추가한다.
+	 */
 	int *old = NULL, *new = NULL;
 	size_t old_size = 0, new_size = new_alloc * sizeof(new[0]);
 	unsigned long flags;
@@ -721,16 +727,22 @@ static void pcpu_free_area(struct pcpu_chunk *chunk, int freeme,
 
 static struct pcpu_chunk *pcpu_alloc_chunk(void)
 {
+	/**
+	 * @brief chunk를 할당받는다.
+	 * @return
+	 *  pcpu_chunk* - Pass
+	 *  NULL - Fail
+	 */
 	struct pcpu_chunk *chunk;
 
-	chunk = pcpu_mem_zalloc(pcpu_chunk_struct_size);
+	chunk = pcpu_mem_zalloc(pcpu_chunk_struct_size); // chunk 할당
 	if (!chunk)
 		return NULL;
 
-	chunk->map = pcpu_mem_zalloc(PCPU_DFL_MAP_ALLOC *
+	chunk->map = pcpu_mem_zalloc(PCPU_DFL_MAP_ALLOC * // chunk->map 할당
 						sizeof(chunk->map[0]));
-	if (!chunk->map) {
-		pcpu_mem_free(chunk);
+	if (!chunk->map) { // 할당 실패한 경우
+		pcpu_mem_free(chunk); // 앞서 할당한 chunk 할당 해제
 		return NULL;
 	}
 
@@ -739,7 +751,7 @@ static struct pcpu_chunk *pcpu_alloc_chunk(void)
 	chunk->map[1] = pcpu_unit_size | 1;
 	chunk->map_used = 1;
 
-	INIT_LIST_HEAD(&chunk->list);
+	INIT_LIST_HEAD(&chunk->list); // chunk list initialize
 	INIT_WORK(&chunk->map_extend_work, pcpu_map_extend_workfn);
 	chunk->free_size = pcpu_unit_size;
 	chunk->contig_hint = pcpu_unit_size;
@@ -874,7 +886,7 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
 	static int warn_limit = 10;
 	struct pcpu_chunk *chunk;
 	const char *err;
-	bool is_atomic = (gfp & GFP_KERNEL) != GFP_KERNEL;
+	bool is_atomic = (gfp & GFP_KERNEL) != GFP_KERNEL; // atomic 여부 파악
 	int occ_pages = 0;
 	int slot, off, new_alloc, cpu, ret;
 	unsigned long flags;
@@ -884,39 +896,39 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
 	 * We want the lowest bit of offset available for in-use/free
 	 * indicator, so force >= 16bit alignment and make size even.
 	 */
-	if (unlikely(align < 2))
+	if (unlikely(align < 2)) // in-use / free 표기를 위해서 align 값이 2 이상이 되어야 한다.
 		align = 2;
 
 	size = ALIGN(size, 2);
 
-	if (unlikely(!size || size > PCPU_MIN_UNIT_SIZE || align > PAGE_SIZE)) {
+	if (unlikely(!size || size > PCPU_MIN_UNIT_SIZE || align > PAGE_SIZE)) { // size가 0인 경우, percpu 최소 unit size 보다 작은 경우, align 값이 PAGE_SIZE 보다 작은 경우
 		WARN(true, "illegal size (%zu) or align (%zu) for percpu allocation\n",
 		     size, align);
 		return NULL;
 	}
 
-	spin_lock_irqsave(&pcpu_lock, flags);
+	spin_lock_irqsave(&pcpu_lock, flags); // irq save
 
 	/* serve reserved allocations from the reserved chunk if available */
-	if (reserved && pcpu_reserved_chunk) {
+	if (reserved && pcpu_reserved_chunk) { // reserved chunk가 있을 경우
 		chunk = pcpu_reserved_chunk;
 
-		if (size > chunk->contig_hint) {
+		if (size > chunk->contig_hint) { // 할당하려는 size가 가지고 있는 size보다 큰 경우
 			err = "alloc from reserved chunk failed";
 			goto fail_unlock;
 		}
 
-		while ((new_alloc = pcpu_need_to_extend(chunk, is_atomic))) {
-			spin_unlock_irqrestore(&pcpu_lock, flags);
+		while ((new_alloc = pcpu_need_to_extend(chunk, is_atomic))) { // TODO 4-179), per_cpu 맵 확장이 필요한지 확인하고 필요한 배열 수를 리턴
+			spin_unlock_irqrestore(&pcpu_lock, flags); // irq restore
 			if (is_atomic ||
-			    pcpu_extend_area_map(chunk, new_alloc) < 0) {
+			    pcpu_extend_area_map(chunk, new_alloc) < 0) { // 부족한 만큼 map 할당
 				err = "failed to extend area map of reserved chunk";
 				goto fail;
 			}
-			spin_lock_irqsave(&pcpu_lock, flags);
+			spin_lock_irqsave(&pcpu_lock, flags); // irq save
 		}
 
-		off = pcpu_alloc_area(chunk, size, align, is_atomic,
+		off = pcpu_alloc_area(chunk, size, align, is_atomic, // TODO 4-180) chunk 내에서 allocation 진행
 				      &occ_pages);
 		if (off >= 0)
 			goto area_found;
@@ -924,25 +936,25 @@ static void __percpu *pcpu_alloc(size_t size, size_t align, bool reserved,
 		err = "alloc from reserved chunk failed";
 		goto fail_unlock;
 	}
-
+// ... 4-176)
 restart:
 	/* search through normal chunks */
-	for (slot = pcpu_size_to_slot(size); slot < pcpu_nr_slots; slot++) {
-		list_for_each_entry(chunk, &pcpu_slot[slot], list) {
+	for (slot = pcpu_size_to_slot(size); slot < pcpu_nr_slots; slot++) { // 요청한 size부터 맞는 slot 을 가져옴
+		list_for_each_entry(chunk, &pcpu_slot[slot], list) { // pcpu_slot 에서 slot 마다 
 			if (size > chunk->contig_hint)
 				continue;
 
-			new_alloc = pcpu_need_to_extend(chunk, is_atomic);
+			new_alloc = pcpu_need_to_extend(chunk, is_atomic); // TODO 4-179) per_cpu 맵 확장이 필요한지 확인
 			if (new_alloc) {
-				if (is_atomic)
+				if (is_atomic) // atomic 인 경우 skip
 					continue;
-				spin_unlock_irqrestore(&pcpu_lock, flags);
-				if (pcpu_extend_area_map(chunk,
+				spin_unlock_irqrestore(&pcpu_lock, flags); // irq restore
+				if (pcpu_extend_area_map(chunk, // 부족한 만큼 map 확장
 							 new_alloc) < 0) {
 					err = "failed to extend area map";
 					goto fail;
 				}
-				spin_lock_irqsave(&pcpu_lock, flags);
+				spin_lock_irqsave(&pcpu_lock, flags); // irq restore
 				/*
 				 * pcpu_lock has been dropped, need to
 				 * restart cpu_slot list walking.
@@ -950,15 +962,15 @@ restart:
 				goto restart;
 			}
 
-			off = pcpu_alloc_area(chunk, size, align, is_atomic,
+			off = pcpu_alloc_area(chunk, size, align, is_atomic, // TODO 4-180) chunk 에서 allocation 진행
 					      &occ_pages);
 			if (off >= 0)
 				goto area_found;
 		}
 	}
 
-	spin_unlock_irqrestore(&pcpu_lock, flags);
-
+	spin_unlock_irqrestore(&pcpu_lock, flags); // irq restore
+// ... 4-177)
 	/*
 	 * No space left.  Create a new chunk.  We don't want multiple
 	 * tasks to create chunks simultaneously.  Serialize and create iff
@@ -967,10 +979,10 @@ restart:
 	if (is_atomic)
 		goto fail;
 
-	mutex_lock(&pcpu_alloc_mutex);
+	mutex_lock(&pcpu_alloc_mutex); // mutex lock
 
-	if (list_empty(&pcpu_slot[pcpu_nr_slots - 1])) {
-		chunk = pcpu_create_chunk();
+	if (list_empty(&pcpu_slot[pcpu_nr_slots - 1])) { // pcpu_slot list가 비어있는 경우
+		chunk = pcpu_create_chunk();// 새로운 chunk를 만든다.
 		if (!chunk) {
 			mutex_unlock(&pcpu_alloc_mutex);
 			err = "failed to allocate new chunk";
@@ -978,73 +990,74 @@ restart:
 		}
 
 		spin_lock_irqsave(&pcpu_lock, flags);
-		pcpu_chunk_relocate(chunk, -1);
+		pcpu_chunk_relocate(chunk, -1); // chunk move
 	} else {
 		spin_lock_irqsave(&pcpu_lock, flags);
 	}
 
-	mutex_unlock(&pcpu_alloc_mutex);
-	goto restart;
+	mutex_unlock(&pcpu_alloc_mutex); // mutex unlock
+	goto restart; // chunk 할당 이후 재시도
 
 area_found:
-	spin_unlock_irqrestore(&pcpu_lock, flags);
+	spin_unlock_irqrestore(&pcpu_lock, flags); // irq restore
 
 	/* populate if not all pages are already there */
 	if (!is_atomic) {
 		int page_start, page_end, rs, re;
 
-		mutex_lock(&pcpu_alloc_mutex);
+		mutex_lock(&pcpu_alloc_mutex); // mutex lock
 
-		page_start = PFN_DOWN(off);
+		page_start = PFN_DOWN(off); // start, end 영역을 맞춤
 		page_end = PFN_UP(off + size);
 
 		pcpu_for_each_unpop_region(chunk, rs, re, page_start, page_end) {
 			WARN_ON(chunk->immutable);
 
-			ret = pcpu_populate_chunk(chunk, rs, re);
+			ret = pcpu_populate_chunk(chunk, rs, re); // TODO 4-183), per-cpu 페이지 범위 활성화
 
-			spin_lock_irqsave(&pcpu_lock, flags);
-			if (ret) {
-				mutex_unlock(&pcpu_alloc_mutex);
-				pcpu_free_area(chunk, off, &occ_pages);
+			spin_lock_irqsave(&pcpu_lock, flags); // irq save
+			if (ret) { // 실패 케이스
+				mutex_unlock(&pcpu_alloc_mutex); // mutex unlock
+				pcpu_free_area(chunk, off, &occ_pages); // 앞서 가져온 area 해제 (확인 필요)
 				err = "failed to populate";
 				goto fail_unlock;
 			}
-			pcpu_chunk_populated(chunk, rs, re);
-			spin_unlock_irqrestore(&pcpu_lock, flags);
+			pcpu_chunk_populated(chunk, rs, re); // chunk populate
+			spin_unlock_irqrestore(&pcpu_lock, flags); // irq restore
 		}
 
-		mutex_unlock(&pcpu_alloc_mutex);
+		mutex_unlock(&pcpu_alloc_mutex); // mutex unlock
 	}
+// ... 4-178
 
-	if (chunk != pcpu_reserved_chunk)
+	if (chunk != pcpu_reserved_chunk) // reserved chunk가 아닌 경우
 		pcpu_nr_empty_pop_pages -= occ_pages;
 
-	if (pcpu_nr_empty_pop_pages < PCPU_EMPTY_POP_PAGES_LOW)
-		pcpu_schedule_balance_work();
+	if (pcpu_nr_empty_pop_pages < PCPU_EMPTY_POP_PAGES_LOW) // populated page 수가 2 보다 작은 경우
+		pcpu_schedule_balance_work();  // work_queue 에서 pcpu_balance_worrkn 호출, 빈 chunk에 atomic 할당이 가능하도록 populated page 확보
 
 	/* clear the areas and return address relative to base address */
-	for_each_possible_cpu(cpu)
-		memset((void *)pcpu_chunk_addr(chunk, cpu, 0) + off, 0, size);
+	for_each_possible_cpu(cpu) // 사용 가능한 cpu마다 loop
+		memset((void *)pcpu_chunk_addr(chunk, cpu, 0) + off, 0, size); // chunk 영역을 0으로 초기화
 
-	ptr = __addr_to_pcpu_ptr(chunk->base_addr + off);
-	kmemleak_alloc_percpu(ptr, size, gfp);
-	return ptr;
+	ptr = __addr_to_pcpu_ptr(chunk->base_addr + off); //address 를 percpu 포인터로 변환
+	kmemleak_alloc_percpu(ptr, size, gfp); // memory leak 확인
+	return ptr; // 받아온 percpu ptr 리턴
 
 fail_unlock:
-	spin_unlock_irqrestore(&pcpu_lock, flags);
+	spin_unlock_irqrestore(&pcpu_lock, flags); // irq restore
 fail:
-	if (!is_atomic && warn_limit) {
+	if (!is_atomic && warn_limit) { // atomic 이 아닌 case fail 처리
 		pr_warn("allocation failed, size=%zu align=%zu atomic=%d, %s\n",
 			size, align, is_atomic, err);
 		dump_stack();
 		if (!--warn_limit)
 			pr_info("limit reached, disable warning\n");
 	}
-	if (is_atomic) {
+	if (is_atomic) { // atomic case fail 처리
 		/* see the flag handling in pcpu_blance_workfn() */
 		pcpu_atomic_alloc_failed = true;
-		pcpu_schedule_balance_work();
+		pcpu_schedule_balance_work(); // page free 스케줄링
 	}
 	return NULL;
 }
@@ -1584,7 +1597,7 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 
 		for (i = 0; i < gi->nr_units; i++) {
 			cpu = gi->cpu_map[i];
-			if (cpu == NR_CPUS)
+			if (cpu == NR_CPUS) // cpu가 매핑되지 않은 경우 skip
 				continue;
 
 			PCPU_SETUP_BUG_ON(cpu >= nr_cpu_ids);
@@ -1603,7 +1616,7 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 				pcpu_high_unit_cpu = cpu;
 		}
 	}
-	pcpu_nr_units = unit; // unit 개수 입력
+	pcpu_nr_units = unit; // 각 그룹의 unit 개수를 더한 수를 설정한다.
 
 	for_each_possible_cpu(cpu)
 		PCPU_SETUP_BUG_ON(unit_map[cpu] == UINT_MAX);
@@ -1612,7 +1625,7 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 #undef PCPU_SETUP_BUG_ON
 	pcpu_dump_alloc_info(KERN_DEBUG, ai); // 디버깅 정보 출력
 
-	pcpu_nr_groups = ai->nr_groups;
+	pcpu_nr_groups = ai->nr_groups; // 전역변수 초기화
 	pcpu_group_offsets = group_offsets;
 	pcpu_group_sizes = group_sizes;
 	pcpu_unit_map = unit_map;
@@ -1629,7 +1642,7 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	 * Allocate chunk slots.  The additional last slot is for
 	 * empty chunks.
 	 */
-	pcpu_nr_slots = __pcpu_size_to_slot(pcpu_unit_size) + 2;
+	pcpu_nr_slots = __pcpu_size_to_slot(pcpu_unit_size) + 2; // unit 사이즈로 chunk 리스트를 관리하는 최대 슬롯 수 + 2
 	pcpu_slot = memblock_virt_alloc( // pcpu_slot[pcpu_nr_slots] = {0,};
 			pcpu_nr_slots * sizeof(pcpu_slot[0]), 0);
 	for (i = 0; i < pcpu_nr_slots; i++)
@@ -1642,27 +1655,32 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	 * covers static area + reserved area (mostly used for module
 	 * static percpu allocation).
 	 */
-	schunk = memblock_virt_alloc(pcpu_chunk_struct_size, 0);
-	INIT_LIST_HEAD(&schunk->list);
-	INIT_WORK(&schunk->map_extend_work, pcpu_map_extend_workfn);
-	schunk->base_addr = base_addr;
-	schunk->map = smap;
-	schunk->map_alloc = ARRAY_SIZE(smap);
+	schunk = memblock_virt_alloc(pcpu_chunk_struct_size, 0); // schunk[pcpu_chunk_struct_size] = {0,};
+	INIT_LIST_HEAD(&schunk->list); // 할당받은 schunk list 초기화
+	INIT_WORK(&schunk->map_extend_work, pcpu_map_extend_workfn); // extend_work 변수 초기화
+	schunk->base_addr = base_addr; // 시작 address
+	schunk->map = smap; // static 영역의 mapping 주소 입력
+	schunk->map_alloc = ARRAY_SIZE(smap); // map 전체 사이즈
 	schunk->immutable = true;
-	bitmap_fill(schunk->populated, pcpu_unit_pages);
-	schunk->nr_populated = pcpu_unit_pages;
+	bitmap_fill(schunk->populated, pcpu_unit_pages); // schunk->populated 변수를 pcpu_unit_pages 만큼 초기화
+	schunk->nr_populated = pcpu_unit_pages; // populated 페이지 개수 입력 (pcpu_unit_pages)
 
-	if (ai->reserved_size) {
-		schunk->free_size = ai->reserved_size;
-		pcpu_reserved_chunk = schunk;
+	if (ai->reserved_size) { // reserved chunk가 있는 경우
+		schunk->free_size = ai->reserved_size; // reserved 만큼 free
+		pcpu_reserved_chunk = schunk; //reserved chunk 로 schunk 선택
 		pcpu_reserved_chunk_limit = ai->static_size + ai->reserved_size;
 	} else {
 		schunk->free_size = dyn_size;
 		dyn_size = 0;			/* dynamic area covered */
 	}
-	schunk->contig_hint = schunk->free_size;
+	schunk->contig_hint = schunk->free_size; // contiguous free size 기록
 
-	schunk->map[0] = 1;
+	/*
+	 * ------ <-- map[1]
+	 * |    | 
+	 * ------ <-- map[0]
+	 */
+	schunk->map[0] = 1; // static 영역을 사용 중으로 표기
 	schunk->map[1] = ai->static_size;
 	schunk->map_used = 1;
 	if (schunk->free_size)
@@ -1670,18 +1688,18 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	schunk->map[schunk->map_used] |= 1;
 
 	/* init dynamic chunk if necessary */
-	if (dyn_size) {
-		dchunk = memblock_virt_alloc(pcpu_chunk_struct_size, 0);
-		INIT_LIST_HEAD(&dchunk->list);
-		INIT_WORK(&dchunk->map_extend_work, pcpu_map_extend_workfn);
+	if (dyn_size) { // dchunk가 있는 경우
+		dchunk = memblock_virt_alloc(pcpu_chunk_struct_size, 0); // memblock 에서 dchunk 할당, dchunk[pcpu_chunk_struct_size] = {0,};
+		INIT_LIST_HEAD(&dchunk->list); // dchunk 리스트 초기화
+		INIT_WORK(&dchunk->map_extend_work, pcpu_map_extend_workfn); // extend_work 초기화
 		dchunk->base_addr = base_addr;
 		dchunk->map = dmap;
 		dchunk->map_alloc = ARRAY_SIZE(dmap);
 		dchunk->immutable = true;
-		bitmap_fill(dchunk->populated, pcpu_unit_pages);
-		dchunk->nr_populated = pcpu_unit_pages;
+		bitmap_fill(dchunk->populated, pcpu_unit_pages); // dchunk->populated 값 초기화
+		dchunk->nr_populated = pcpu_unit_pages; // populated page 개수 입력
 
-		dchunk->contig_hint = dchunk->free_size = dyn_size;
+		dchunk->contig_hint = dchunk->free_size = dyn_size; // contiguous free size
 		dchunk->map[0] = 1;
 		dchunk->map[1] = pcpu_reserved_chunk_limit;
 		dchunk->map[2] = (pcpu_reserved_chunk_limit + dchunk->free_size) | 1;
@@ -1689,13 +1707,13 @@ int __init pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai,
 	}
 
 	/* link the first chunk in */
-	pcpu_first_chunk = dchunk ?: schunk;
-	pcpu_nr_empty_pop_pages +=
-		pcpu_count_occupied_pages(pcpu_first_chunk, 1);
-	pcpu_chunk_relocate(pcpu_first_chunk, -1);
+	pcpu_first_chunk = dchunk ?: schunk; // first_chunk 는 dchunk로 설정하고 없을 경우에는 schunk로 설정
+	pcpu_nr_empty_pop_pages += // empty populated page 계산
+		pcpu_count_occupied_pages(pcpu_first_chunk, 1); // TODO 4-173
+	pcpu_chunk_relocate(pcpu_first_chunk, -1); // TODO 4-174, 
 
 	/* we're done */
-	pcpu_base_addr = base_addr;
+	pcpu_base_addr = base_addr; // base_addr 입력
 	return 0;
 }
 
@@ -2269,6 +2287,9 @@ void __init setup_per_cpu_areas(void)
  */
 void __init percpu_init_late(void)
 {
+	/**
+	 * @brief slab 할당자 활성화 이전에 임시로 할당했던 chunk->map 을 새로 할당 받는다.
+	 */
 	struct pcpu_chunk *target_chunks[] =
 		{ pcpu_first_chunk, pcpu_reserved_chunk, NULL };
 	struct pcpu_chunk *chunk;
@@ -2281,13 +2302,13 @@ void __init percpu_init_late(void)
 
 		BUILD_BUG_ON(size > PAGE_SIZE);
 
-		map = pcpu_mem_zalloc(size);
-		BUG_ON(!map);
+		map = pcpu_mem_zalloc(size); // slab 할당자로부터 map을 할당받는다 (page size보다 작은 경우 물리 메모리에서 즉시 할당한다.)
+		BUG_ON(!map); // 할당 실패 케이스
 
-		spin_lock_irqsave(&pcpu_lock, flags);
+		spin_lock_irqsave(&pcpu_lock, flags); // irq save
 		memcpy(map, chunk->map, size);
-		chunk->map = map;
-		spin_unlock_irqrestore(&pcpu_lock, flags);
+		chunk->map = map; // chunk->map 을 map으로 대체
+		spin_unlock_irqrestore(&pcpu_lock, flags); // irq restore
 	}
 }
 

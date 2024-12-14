@@ -328,10 +328,13 @@ static void pcpu_depopulate_chunk(struct pcpu_chunk *chunk,
 
 static struct pcpu_chunk *pcpu_create_chunk(void)
 {
+	/**
+	 * @brief chunk를 하나 생성한다.
+	 */
 	struct pcpu_chunk *chunk;
 	struct vm_struct **vms;
 
-	chunk = pcpu_alloc_chunk();
+	chunk = pcpu_alloc_chunk(); // 1개 chunk 및 chunk->map 을 할당, 초기화
 	if (!chunk)
 		return NULL;
 
