@@ -279,22 +279,25 @@ void __init __weak arch_task_cache_init(void) { }
  */
 static void set_max_threads(unsigned int max_threads_suggested)
 {
+	/**
+	 * @brief 시스템에서 생성할 수 있는 최대 테스크 개수를 설정한다.
+	 */
 	u64 threads;
 
 	/*
 	 * The number of threads shall be limited such that the thread
 	 * structures may only consume a small part of the available memory.
 	 */
-	if (fls64(totalram_pages) + fls64(PAGE_SIZE) > 64)
-		threads = MAX_THREADS;
+	if (fls64(totalram_pages) + fls64(PAGE_SIZE) > 64) // 메모리가 일정 수준 이상이 경우
+		threads = MAX_THREADS; // thread 최대까지 가능
 	else
-		threads = div64_u64((u64) totalram_pages * (u64) PAGE_SIZE,
+		threads = div64_u64((u64) totalram_pages * (u64) PAGE_SIZE, // 메모리 크기기에 따라 사용 가능한 최대 threads 개수 계산
 				    (u64) THREAD_SIZE * 8UL);
 
-	if (threads > max_threads_suggested)
+	if (threads > max_threads_suggested) // 호출 시, 최대 설정 값보다 큰 경우 보정
 		threads = max_threads_suggested;
 
-	max_threads = clamp_t(u64, threads, MIN_THREADS, MAX_THREADS);
+	max_threads = clamp_t(u64, threads, MIN_THREADS, MAX_THREADS); // max_threads 값 입력
 }
 
 #ifdef CONFIG_ARCH_WANTS_DYNAMIC_TASK_STRUCT
@@ -309,17 +312,17 @@ void __init fork_init(void)
 #define ARCH_MIN_TASKALIGN	L1_CACHE_BYTES
 #endif
 	/* create a slab on which task_structs can be allocated */
-	task_struct_cachep = kmem_cache_create("task_struct",
-			arch_task_struct_size, ARCH_MIN_TASKALIGN,
+	task_struct_cachep = kmem_cache_create("task_struct", // task_struct 슬랩 캐시를 생성
+			arch_task_struct_size, ARCH_MIN_TASKALIGN
 			SLAB_PANIC|SLAB_NOTRACK|SLAB_ACCOUNT, NULL);
 #endif
 
 	/* do the arch specific task caches init */
-	arch_task_cache_init();
+	arch_task_cache_init(); // 추가적인 task 관련 kmem_cache를 초기화한다.
 
-	set_max_threads(MAX_THREADS);
+	set_max_threads(MAX_THREADS); // 최대로 생성 가능한 태스크 관련 캐시를 초기화
 
-	init_task.signal->rlim[RLIMIT_NPROC].rlim_cur = max_threads/2;
+	init_task.signal->rlim[RLIMIT_NPROC].rlim_cur = max_threads/2; // resource limit 관련 초기화
 	init_task.signal->rlim[RLIMIT_NPROC].rlim_max = max_threads/2;
 	init_task.signal->rlim[RLIMIT_SIGPENDING] =
 		init_task.signal->rlim[RLIMIT_NPROC];
@@ -1855,19 +1858,22 @@ static void sighand_ctor(void *data)
 
 void __init proc_caches_init(void)
 {
-	sighand_cachep = kmem_cache_create("sighand_cache",
+	/**
+	 * @brief kmem_cache 초기화
+	 */
+	sighand_cachep = kmem_cache_create("sighand_cache", // sighand_cache 생성
 			sizeof(struct sighand_struct), 0,
 			SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_DESTROY_BY_RCU|
 			SLAB_NOTRACK|SLAB_ACCOUNT, sighand_ctor);
-	signal_cachep = kmem_cache_create("signal_cache",
+	signal_cachep = kmem_cache_create("signal_cache", // signal_cache 생성
 			sizeof(struct signal_struct), 0,
 			SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_NOTRACK|SLAB_ACCOUNT,
 			NULL);
-	files_cachep = kmem_cache_create("files_cache",
+	files_cachep = kmem_cache_create("files_cache", // files_cache 생성
 			sizeof(struct files_struct), 0,
 			SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_NOTRACK|SLAB_ACCOUNT,
 			NULL);
-	fs_cachep = kmem_cache_create("fs_cache",
+	fs_cachep = kmem_cache_create("fs_cache", // fs_cache 생성
 			sizeof(struct fs_struct), 0,
 			SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_NOTRACK|SLAB_ACCOUNT,
 			NULL);
@@ -1878,13 +1884,13 @@ void __init proc_caches_init(void)
 	 * maximum number of CPU's we can ever have.  The cpumask_allocation
 	 * is at the end of the structure, exactly for that reason.
 	 */
-	mm_cachep = kmem_cache_create("mm_struct",
+	mm_cachep = kmem_cache_create("mm_struct", // mm_struct
 			sizeof(struct mm_struct), ARCH_MIN_MMSTRUCT_ALIGN,
 			SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_NOTRACK|SLAB_ACCOUNT,
 			NULL);
-	vm_area_cachep = KMEM_CACHE(vm_area_struct, SLAB_PANIC|SLAB_ACCOUNT);
-	mmap_init();
-	nsproxy_cache_init();
+	vm_area_cachep = KMEM_CACHE(vm_area_struct, SLAB_PANIC|SLAB_ACCOUNT); // vm_area_struct 생성
+	mmap_init(); // vm_committed_as 초기화
+	nsproxy_cache_init(); // nsproxy cache 초기화
 }
 
 /*

@@ -156,34 +156,35 @@ static int alloc_pidmap(struct pid_namespace *pid_ns)
 	int i, offset, max_scan, pid, last = pid_ns->last_pid;
 	struct pidmap *map;
 
-	pid = last + 1;
-	if (pid >= pid_max)
-		pid = RESERVED_PIDS;
-	offset = pid & BITS_PER_PAGE_MASK;
-	map = &pid_ns->pidmap[pid/BITS_PER_PAGE];
+	pid = last + 1; // 할당 시도할 pid 번호를 설정
+	if (pid >= pid_max) // 최대 pid 값 보다 클 경우
+		pid = RESERVED_PIDS; // reserved pid로 대체
+	offset = pid & BITS_PER_PAGE_MASK; // 할당을 시도할 pid가 위치한 pidmap과 pidmap에서의 offset을 구한다.
+	map = &pid_ns->pidmap[pid/BITS_PER_PAGE]; // pid 값으로 pidmap 위치를 찾는다.
 	/*
 	 * If last_pid points into the middle of the map->page we
 	 * want to scan this bitmap block twice, the second time
 	 * we start with offset == 0 (or RESERVED_PIDS).
 	 */
 	max_scan = DIV_ROUND_UP(pid_max, BITS_PER_PAGE) - !offset;
-	for (i = 0; i <= max_scan; ++i) {
+	for (i = 0; i <= max_scan; ++i) { // pid 할당을 위한 반복을 수행
 		if (unlikely(!map->page)) {
-			void *page = kzalloc(PAGE_SIZE, GFP_KERNEL);
+			void *page = kzalloc(PAGE_SIZE, GFP_KERNEL); // page 할당
 			/*
 			 * Free the page if someone raced with us
 			 * installing it:
 			 */
-			spin_lock_irq(&pidmap_lock);
-			if (!map->page) {
-				map->page = page;
+			spin_lock_irq(&pidmap_lock); // spin lock
+			if (!map->page) { // 이전에 할당 받지 못한 경우
+				map->page = page; // 할당받았던 페이지를 입력
 				page = NULL;
 			}
-			spin_unlock_irq(&pidmap_lock);
-			kfree(page);
-			if (unlikely(!map->page))
-				return -ENOMEM;
+			spin_unlock_irq(&pidmap_lock); // spin unlock
+			kfree(page); // page 할당 해제
+			if (unlikely(!map->page)) // 할당을 받지 못한 경우
+				return -ENOMEM; // Error 처리
 		}
+// ... 5-6)
 		if (likely(atomic_read(&map->nr_free))) {
 			for ( ; ; ) {
 				if (!test_and_set_bit(offset, map->page)) {
@@ -296,6 +297,9 @@ void free_pid(struct pid *pid)
 
 struct pid *alloc_pid(struct pid_namespace *ns)
 {
+	/**
+	 * @brief pid를 할당한다.
+	 */
 	struct pid *pid;
 	enum pid_type type;
 	int i, nr;
@@ -303,19 +307,19 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	struct upid *upid;
 	int retval = -ENOMEM;
 
-	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL);
-	if (!pid)
+	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL); // slab allocation 진행
+	if (!pid) // pid 할당 실패 케이스
 		return ERR_PTR(retval);
 
 	tmp = ns;
 	pid->level = ns->level;
-	for (i = ns->level; i >= 0; i--) {
-		nr = alloc_pidmap(tmp);
-		if (IS_ERR_VALUE(nr)) {
+	for (i = ns->level; i >= 0; i--) { // pid 구조체를 할당받은 pid ns가 속한 pid ns 계층구조를 bottom-up 방식으로 탐색한다.
+		nr = alloc_pidmap(tmp); // TODO 5-5) 정수형 PID를 pid ns에서 관리하는 pidmap에서 할당받는다.
+		if (IS_ERR_VALUE(nr)) { // 에러 케이스
 			retval = nr;
 			goto out_free;
 		}
-
+		// 할당받은 pid 멤버 변수 초기화
 		pid->numbers[i].nr = nr;
 		pid->numbers[i].ns = tmp;
 		tmp = tmp->parent;
@@ -327,20 +331,20 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	}
 
 	get_pid_ns(ns);
-	atomic_set(&pid->count, 1);
-	for (type = 0; type < PIDTYPE_MAX; ++type)
+	atomic_set(&pid->count, 1); // 참조 카운트 증가
+	for (type = 0; type < PIDTYPE_MAX; ++type) // pid->task 값 초기화
 		INIT_HLIST_HEAD(&pid->tasks[type]);
 
-	upid = pid->numbers + ns->level;
-	spin_lock_irq(&pidmap_lock);
+	upid = pid->numbers + ns->level; // pid ns에서 할당된 정수형 pid가 담긴 upid 구조체를 구한다.
+	spin_lock_irq(&pidmap_lock); // spin lock
 	if (!(ns->nr_hashed & PIDNS_HASH_ADDING))
 		goto out_unlock;
 	for ( ; upid >= pid->numbers; --upid) {
-		hlist_add_head_rcu(&upid->pid_chain,
+		hlist_add_head_rcu(&upid->pid_chain, // upid 구조체를 해시 테이블에 연결한다.
 				&pid_hash[pid_hashfn(upid->nr, upid->ns)]);
 		upid->ns->nr_hashed++;
 	}
-	spin_unlock_irq(&pidmap_lock);
+	spin_unlock_irq(&pidmap_lock); // spin unlock
 
 	return pid;
 

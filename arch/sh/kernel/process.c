@@ -51,10 +51,13 @@ void arch_release_task_struct(struct task_struct *tsk)
 
 void arch_task_cache_init(void)
 {
+	/**
+	 * @brief task_xstate 캐시를 생성한다.
+	 */
 	if (!xstate_size)
 		return;
 
-	task_xstate_cachep = kmem_cache_create("task_xstate", xstate_size,
+	task_xstate_cachep = kmem_cache_create("task_xstate", xstate_size, // task_xstate 캐시를 생성
 					       __alignof__(union thread_xstate),
 					       SLAB_PANIC | SLAB_NOTRACK, NULL);
 }

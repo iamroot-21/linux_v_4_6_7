@@ -32,14 +32,17 @@ static struct page *pcpu_chunk_page(struct pcpu_chunk *chunk,
  */
 static struct page **pcpu_get_pages(struct pcpu_chunk *chunk_alloc)
 {
+	/**
+	 * @brief 임시 페이지 배열을 할당한다.
+	 */
 	static struct page **pages;
 	size_t pages_size = pcpu_nr_units * pcpu_unit_pages * sizeof(pages[0]);
 
 	lockdep_assert_held(&pcpu_alloc_mutex);
 
 	if (!pages)
-		pages = pcpu_mem_zalloc(pages_size);
-	return pages;
+		pages = pcpu_mem_zalloc(pages_size); // pages 배열 할당
+	return pages; // 할당받은 pages 배열 리턴
 }
 
 /**
@@ -58,12 +61,12 @@ static void pcpu_free_pages(struct pcpu_chunk *chunk,
 	unsigned int cpu;
 	int i;
 
-	for_each_possible_cpu(cpu) {
+	for_each_possible_cpu(cpu) { // cpu 별로 loop
 		for (i = page_start; i < page_end; i++) {
-			struct page *page = pages[pcpu_page_idx(cpu, i)];
+			struct page *page = pages[pcpu_page_idx(cpu, i)]; // pages에서 cpu 별로 할당 영역의 페이지를 참조조
 
-			if (page)
-				__free_page(page);
+			if (page) // 해당 page가 할당받은 상태인 경우
+				__free_page(page); // 할당 해제제
 		}
 	}
 }
@@ -82,32 +85,35 @@ static void pcpu_free_pages(struct pcpu_chunk *chunk,
 static int pcpu_alloc_pages(struct pcpu_chunk *chunk,
 			    struct page **pages, int page_start, int page_end)
 {
+	/**
+	 * @brief 
+	 */
 	const gfp_t gfp = GFP_KERNEL | __GFP_HIGHMEM | __GFP_COLD;
 	unsigned int cpu, tcpu;
 	int i;
 
-	for_each_possible_cpu(cpu) {
+	for_each_possible_cpu(cpu) { // pages를 초기화하기 위해 cpu 별로 indexing
 		for (i = page_start; i < page_end; i++) {
-			struct page **pagep = &pages[pcpu_page_idx(cpu, i)];
+			struct page **pagep = &pages[pcpu_page_idx(cpu, i)]; // cpu마다 할당된 pages를 참조
 
-			*pagep = alloc_pages_node(cpu_to_node(cpu), gfp, 0);
-			if (!*pagep)
+			*pagep = alloc_pages_node(cpu_to_node(cpu), gfp, 0); // page 할당 이후 pagep에 값 입력
+			if (!*pagep) // 할당이 실패한 경우 에러 케이스
 				goto err;
 		}
 	}
 	return 0;
 
-err:
-	while (--i >= page_start)
-		__free_page(pages[pcpu_page_idx(cpu, i)]);
+err: // 에러 케이스 처리
+	while (--i >= page_start) // 할당 받았던 만큼 Loop
+		__free_page(pages[pcpu_page_idx(cpu, i)]); // 할당 받았던 page 할당 해제
 
-	for_each_possible_cpu(tcpu) {
+	for_each_possible_cpu(tcpu) { // cpu 별로 loop
 		if (tcpu == cpu)
 			break;
 		for (i = page_start; i < page_end; i++)
-			__free_page(pages[pcpu_page_idx(tcpu, i)]);
+			__free_page(pages[pcpu_page_idx(tcpu, i)]); // cpu 별로 할당받았던 page 할당 해제
 	}
-	return -ENOMEM;
+	return -ENOMEM; // Error 플래그 리턴
 }
 
 /**
@@ -212,29 +218,32 @@ static int __pcpu_map_pages(unsigned long addr, struct page **pages,
 static int pcpu_map_pages(struct pcpu_chunk *chunk,
 			  struct page **pages, int page_start, int page_end)
 {
+	/**
+	 * @brief 할당받은 페이지를 vmalloc 영역에 매핑한다.
+	 */
 	unsigned int cpu, tcpu;
 	int i, err;
 
-	for_each_possible_cpu(cpu) {
-		err = __pcpu_map_pages(pcpu_chunk_addr(chunk, cpu, page_start),
+	for_each_possible_cpu(cpu) { // 사용 가능한 cpu 별로 loop
+		err = __pcpu_map_pages(pcpu_chunk_addr(chunk, cpu, page_start), // vmalloc 영역에 매핑
 				       &pages[pcpu_page_idx(cpu, page_start)],
 				       page_end - page_start);
-		if (err < 0)
+		if (err < 0) // error case 처리
 			goto err;
 
-		for (i = page_start; i < page_end; i++)
-			pcpu_set_page_chunk(pages[pcpu_page_idx(cpu, i)],
+		for (i = page_start; i < page_end; i++) // 해당 cpu가 사용 중인 page 별로 loop
+			pcpu_set_page_chunk(pages[pcpu_page_idx(cpu, i)], // 각 페이지들이 pcpu_chunk를 가리키도록 설정
 					    chunk);
 	}
 	return 0;
-err:
-	for_each_possible_cpu(tcpu) {
+err: // error case
+	for_each_possible_cpu(tcpu) { // cpu 별로 loop
 		if (tcpu == cpu)
 			break;
-		__pcpu_unmap_pages(pcpu_chunk_addr(chunk, tcpu, page_start),
+		__pcpu_unmap_pages(pcpu_chunk_addr(chunk, tcpu, page_start), // error case 이전까지 mapping 했던 chunk unmapping
 				   page_end - page_start);
 	}
-	pcpu_post_unmap_tlb_flush(chunk, page_start, page_end);
+	pcpu_post_unmap_tlb_flush(chunk, page_start, page_end); // TLB Flush
 	return err;
 }
 
@@ -273,20 +282,23 @@ static void pcpu_post_map_flush(struct pcpu_chunk *chunk,
 static int pcpu_populate_chunk(struct pcpu_chunk *chunk,
 			       int page_start, int page_end)
 {
+	/**
+	 * @brief chunk 내의 요청된 페이지 범위를 활성화한다.
+	 */
 	struct page **pages;
 
-	pages = pcpu_get_pages(chunk);
-	if (!pages)
+	pages = pcpu_get_pages(chunk); // pages 배열을 할당받아옴
+	if (!pages) // 할당 실패 케이스
 		return -ENOMEM;
 
-	if (pcpu_alloc_pages(chunk, pages, page_start, page_end))
+	if (pcpu_alloc_pages(chunk, pages, page_start, page_end)) // 필요 페이지 범위를 cpu 개수만큼 할당받는다.
 		return -ENOMEM;
 
-	if (pcpu_map_pages(chunk, pages, page_start, page_end)) {
-		pcpu_free_pages(chunk, pages, page_start, page_end);
+	if (pcpu_map_pages(chunk, pages, page_start, page_end)) { // TODO 4-184) 할당받은 페이지들을 vmalloc 영역에 매핑
+		pcpu_free_pages(chunk, pages, page_start, page_end); // 할당받았던 pages를 할당 해제
 		return -ENOMEM;
 	}
-	pcpu_post_map_flush(chunk, page_start, page_end);
+	pcpu_post_map_flush(chunk, page_start, page_end); // TLB 캐시 플러시
 
 	return 0;
 }

@@ -508,13 +508,16 @@ static void pcpu_map_extend_workfn(struct work_struct *work)
 static int pcpu_fit_in_area(struct pcpu_chunk *chunk, int off, int this_size,
 			    int size, int align, bool pop_only)
 {
+	/**
+	 * @brief 찾은 빈공간의 위치를 정렬해서 재조정
+	 */
 	int cand_off = off;
 
 	while (true) {
-		int head = ALIGN(cand_off, align) - off;
+		int head = ALIGN(cand_off, align) - off; // align 단위로 정렬하고 남은 사이즈 계산
 		int page_start, page_end, rs, re;
 
-		if (this_size < head + size)
+		if (this_size < head + size) // 이 공간을 들어갈 수 없다고 판단
 			return -1;
 
 		if (!pop_only)
@@ -525,12 +528,13 @@ static int pcpu_fit_in_area(struct pcpu_chunk *chunk, int off, int this_size,
 		 * allocation, the whole allocation is populated;
 		 * otherwise, retry from the end of the unpopulated area.
 		 */
-		page_start = PFN_DOWN(head + off);
-		page_end = PFN_UP(head + off + size);
+
+		page_start = PFN_DOWN(head + off); // page frame에 맞춰서 값 보정
+		page_end = PFN_UP(head + off + size); // page frame에 맞춰서 값 보정
 
 		rs = page_start;
-		pcpu_next_unpop(chunk, &rs, &re, PFN_UP(off + this_size));
-		if (rs >= page_end)
+		pcpu_next_unpop(chunk, &rs, &re, PFN_UP(off + this_size)); // 다음 활성화되지 않은 페이지를 rs, re에 구한다.
+		if (rs >= page_end) // 다음 페이지인 경우
 			return head;
 		cand_off = re * PAGE_SIZE;
 	}
@@ -560,25 +564,28 @@ static int pcpu_fit_in_area(struct pcpu_chunk *chunk, int off, int this_size,
 static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 			   bool pop_only, int *occ_pages_p)
 {
-	int oslot = pcpu_chunk_slot(chunk);
+	/**
+	 * @brief pcpu chunk인 chunk로부터 size만큼의 영역을 할당한다.
+	 */
+	int oslot = pcpu_chunk_slot(chunk); // 요청 chunk가 있는 슬롯을 가져온다.
 	int max_contig = 0;
 	int i, off;
 	bool seen_free = false;
 	int *p;
 
-	for (i = chunk->first_free, p = chunk->map + i; i < chunk->map_used; i++, p++) {
+	for (i = chunk->first_free, p = chunk->map + i; i < chunk->map_used; i++, p++) { // chunk 첫 free 엔트리부터 마지막 맵 엔트리까지
 		int head, tail;
 		int this_size;
 
-		off = *p;
-		if (off & 1)
+		off = *p; // offset 값 계산용
+		if (off & 1) // 사용 중인 경우 continue
 			continue;
 
-		this_size = (p[1] & ~1) - off;
+		this_size = (p[1] & ~1) - off; // 현재 맵 엔트리 사이즈 계산
 
-		head = pcpu_fit_in_area(chunk, off, this_size, size, align,
+		head = pcpu_fit_in_area(chunk, off, this_size, size, align, // TODO 4-182) 맵에서 사용 가능한 공간을 찾는다.
 					pop_only);
-		if (head < 0) {
+		if (head < 0) { // Fail case
 			if (!seen_free) {
 				chunk->first_free = i;
 				seen_free = true;
@@ -593,8 +600,8 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 		 * than sizeof(int), which is very small but isn't too
 		 * uncommon for percpu allocations.
 		 */
-		if (head && (head < sizeof(int) || !(p[-1] & 1))) {
-			*p = off += head;
+		if (head && (head < sizeof(int) || !(p[-1] & 1))) { // head가 할당된 상태인데 size가 int 보다 작고 사용 중인 경우
+			*p = off += head; // 현재 엔트리에 head 만큼의 사이즈를 더한다.
 			if (p[-1] & 1)
 				chunk->free_size -= head;
 			else
@@ -604,14 +611,14 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 		}
 
 		/* if tail is small, just keep it around */
-		tail = this_size - head - size;
-		if (tail < sizeof(int)) {
+		tail = this_size - head - size; 
+		if (tail < sizeof(int)) { // tail 이 int보다 작은 경우 0으로 처리
 			tail = 0;
 			size = this_size - head;
 		}
-
+// ... 4-181)
 		/* split if warranted */
-		if (head || tail) {
+		if (head || tail) { // 맵 엔트리 할당 이후 head 또는 tail이 남은 경우
 			int nr_extra = !!head + !!tail;
 
 			/* insert new subblocks */
@@ -619,12 +626,12 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 				sizeof(chunk->map[0]) * (chunk->map_used - i));
 			chunk->map_used += nr_extra;
 
-			if (head) {
-				if (!seen_free) {
-					chunk->first_free = i;
+			if (head) { // head가 남을 경우
+				if (!seen_free) { // 첫 번째 값인 경우
+					chunk->first_free = i; // first free 값 업데이트
 					seen_free = true;
 				}
-				*++p = off += head;
+				*++p = off += head; // 맵 엔트리의 시작점을 앞으로 당김
 				++i;
 				max_contig = max(head, max_contig);
 			}
@@ -635,28 +642,28 @@ static int pcpu_alloc_area(struct pcpu_chunk *chunk, int size, int align,
 		}
 
 		if (!seen_free)
-			chunk->first_free = i + 1;
+			chunk->first_free = i + 1; // first chunk인 경우 first chunk update
 
 		/* update hint and mark allocated */
-		if (i + 1 == chunk->map_used)
+		if (i + 1 == chunk->map_used) // max contig 값 업데이트
 			chunk->contig_hint = max_contig; /* fully scanned */
 		else
-			chunk->contig_hint = max(chunk->contig_hint,
+			chunk->contig_hint = max(chunk->contig_hint;
 						 max_contig);
 
-		chunk->free_size -= size;
-		*p |= 1;
+		chunk->free_size -= size; // 사용하려는 맵 엔트리 사이즈 만큼 사이즈를 줄인다.
+		*p |= 1; // 사용 중으로 표기
 
-		*occ_pages_p = pcpu_count_occupied_pages(chunk, i);
-		pcpu_chunk_relocate(chunk, oslot);
-		return off;
+		*occ_pages_p = pcpu_count_occupied_pages(chunk, i); // 온전한 페이지 수를 계산
+		pcpu_chunk_relocate(chunk, oslot); // chunk 재배치
+		return off; // 할당한 맵 엔트리 리턴
 	}
 
 	chunk->contig_hint = max_contig;	/* fully scanned */
-	pcpu_chunk_relocate(chunk, oslot);
+	pcpu_chunk_relocate(chunk, oslot); // chunk 재배치
 
 	/* tell the upper layer that this chunk has no matching area */
-	return -1;
+	return -1; // Fail case
 }
 
 /**
