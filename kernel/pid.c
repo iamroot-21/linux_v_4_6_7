@@ -108,8 +108,8 @@ static void free_pidmap(struct upid *upid)
 	struct pidmap *map = upid->ns->pidmap + nr / BITS_PER_PAGE;
 	int offset = nr & BITS_PER_PAGE_MASK;
 
-	clear_bit(offset, map->page);
-	atomic_inc(&map->nr_free);
+	clear_bit(offset, map->page); // page offset 에 pid 비트를 해제
+	atomic_inc(&map->nr_free); // free 갯수 1 증가
 }
 
 /*
@@ -185,30 +185,35 @@ static int alloc_pidmap(struct pid_namespace *pid_ns)
 				return -ENOMEM; // Error 처리
 		}
 // ... 5-6)
-		if (likely(atomic_read(&map->nr_free))) {
+		if (likely(atomic_read(&map->nr_free))) { // 페이지에 비어있는 pid 가 있다면
 			for ( ; ; ) {
-				if (!test_and_set_bit(offset, map->page)) {
-					atomic_dec(&map->nr_free);
-					set_last_pid(pid_ns, last, pid);
-					return pid;
+				if (!test_and_set_bit(offset, map->page)) { // page 에 pid 할당을 시도
+					// 성공한 경우
+					atomic_dec(&map->nr_free); // 비어있던 갯수 1개 빼기
+					set_last_pid(pid_ns, last, pid); // pid namespace 에 마지막 pid 를 설정
+					return pid; // 할당성공하여 return
 				}
-				offset = find_next_offset(map, offset);
+				offset = find_next_offset(map, offset); // 할당 가능한 offset 이 있는지
 				if (offset >= BITS_PER_PAGE)
 					break;
-				pid = mk_pid(pid_ns, map, offset);
+				pid = mk_pid(pid_ns, map, offset); // 할당 가능한 pid 가 있는지
 				if (pid >= pid_max)
 					break;
 			}
 		}
+		// map 에서 할당을 더이상 할수 없는 경우에만
 		if (map < &pid_ns->pidmap[(pid_max-1)/BITS_PER_PAGE]) {
+			// 마지막 page 가 아니었던 경우 다음 map 에서 할당 시도
 			++map;
 			offset = 0;
 		} else {
+			// 마지막 page 였던 경우 0번페이지의 reserve pid 롤 할당 시도
 			map = &pid_ns->pidmap[0];
 			offset = RESERVED_PIDS;
 			if (unlikely(last == offset))
 				break;
 		}
+		// 다음 맵의 pid 를 찾거나 resreved pid 가되고 루프를 한번더 타게됨
 		pid = mk_pid(pid_ns, map, offset);
 	}
 	return -EAGAIN;
@@ -264,11 +269,11 @@ void free_pid(struct pid *pid)
 	unsigned long flags;
 
 	spin_lock_irqsave(&pidmap_lock, flags);
-	for (i = 0; i <= pid->level; i++) {
+	for (i = 0; i <= pid->level; i++) { // 부모에서부터 자식 방향으로 pid 를 해제
 		struct upid *upid = pid->numbers + i;
 		struct pid_namespace *ns = upid->ns;
-		hlist_del_rcu(&upid->pid_chain);
-		switch(--ns->nr_hashed) {
+		hlist_del_rcu(&upid->pid_chain); // 해시 리스트에서 제거
+		switch(--ns->nr_hashed) { // nr_hashed 값에 따른 예외처리
 		case 2:
 		case 1:
 			/* When all that is left in the pid namespace
@@ -290,9 +295,9 @@ void free_pid(struct pid *pid)
 	spin_unlock_irqrestore(&pidmap_lock, flags);
 
 	for (i = 0; i <= pid->level; i++)
-		free_pidmap(pid->numbers + i);
+		free_pidmap(pid->numbers + i); // 5-8
 
-	call_rcu(&pid->rcu, delayed_put_pid);
+	call_rcu(&pid->rcu, delayed_put_pid); // pid 와 pid namespace 의 참조카운트를 1씩 감소
 }
 
 struct pid *alloc_pid(struct pid_namespace *ns)
@@ -583,11 +588,11 @@ void __init pidhash_init(void)
 	pid_hash = alloc_large_system_hash("PID", sizeof(*pid_hash), 0, 18,
 					   HASH_EARLY | HASH_SMALL,
 					   &pidhash_shift, NULL,
-					   0, 4096);
-	pidhash_size = 1U << pidhash_shift;
+					   0, 4096); // hash table 로 사용할 메모리 할당
+	pidhash_size = 1U << pidhash_shift; // hash 리스트의 갯수
 
 	for (i = 0; i < pidhash_size; i++)
-		INIT_HLIST_HEAD(&pid_hash[i]);
+		INIT_HLIST_HEAD(&pid_hash[i]); // hash 리스트 초기화
 }
 
 void __init pidmap_init(void)
@@ -596,17 +601,17 @@ void __init pidmap_init(void)
 	BUILD_BUG_ON(PID_MAX_LIMIT >= PIDNS_HASH_ADDING);
 
 	/* bump default and minimum pid_max based on number of cpus */
-	pid_max = min(pid_max_max, max_t(int, pid_max,
+	pid_max = min(pid_max_max, max_t(int, pid_max, // pid 최대값 설정
 				PIDS_PER_CPU_DEFAULT * num_possible_cpus()));
-	pid_max_min = max_t(int, pid_max_min,
+	pid_max_min = max_t(int, pid_max_min, // pid 최대값의 최소값 설정
 				PIDS_PER_CPU_MIN * num_possible_cpus());
 	pr_info("pid_max: default: %u minimum: %u\n", pid_max, pid_max_min);
 
-	init_pid_ns.pidmap[0].page = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	init_pid_ns.pidmap[0].page = kzalloc(PAGE_SIZE, GFP_KERNEL); // pid 페이지 1개 할당
 	/* Reserve PID 0. We never call free_pidmap(0) */
-	set_bit(0, init_pid_ns.pidmap[0].page);
-	atomic_dec(&init_pid_ns.pidmap[0].nr_free);
+	set_bit(0, init_pid_ns.pidmap[0].page); // 0번 pid 는 init 용 process 를 위해서 미리 할당
+	atomic_dec(&init_pid_ns.pidmap[0].nr_free); // 0번 pid 를 사용하기 때문에 free 1 감소
 
-	init_pid_ns.pid_cachep = KMEM_CACHE(pid,
+	init_pid_ns.pid_cachep = KMEM_CACHE(pid, // pid 구조체를 위한 slab 캐시 할당
 			SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT);
 }

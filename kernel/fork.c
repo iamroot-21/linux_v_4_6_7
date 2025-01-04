@@ -1731,7 +1731,7 @@ long _do_fork(unsigned long clone_flags,
 			trace = 0;
 	}
 
-	p = copy_process(clone_flags, stack_start, stack_size,
+	p = copy_process(clone_flags, stack_start, stack_size, // current task 를 부모로 갖는 task 생성
 			 child_tidptr, NULL, trace, tls);
 	/*
 	 * Do this prior waking up the new thread - the thread pointer
@@ -1743,8 +1743,8 @@ long _do_fork(unsigned long clone_flags,
 
 		trace_sched_process_fork(current, p);
 
-		pid = get_task_pid(p, PIDTYPE_PID);
-		nr = pid_vnr(pid);
+		pid = get_task_pid(p, PIDTYPE_PID); // struct pid 를 가져옴
+		nr = pid_vnr(pid); // 정수형 pid 를 가져옴 
 
 		if (clone_flags & CLONE_PARENT_SETTID)
 			put_user(nr, parent_tidptr);
@@ -1755,7 +1755,7 @@ long _do_fork(unsigned long clone_flags,
 			get_task_struct(p);
 		}
 
-		wake_up_new_task(p);
+		wake_up_new_task(p); // 새로 생성된 task 가 실행 될 수 있도록 queue 에 넣어줌
 
 		/* forking complete and child started to run, tell ptracer */
 		if (unlikely(trace))
@@ -1770,7 +1770,7 @@ long _do_fork(unsigned long clone_flags,
 	} else {
 		nr = PTR_ERR(p);
 	}
-	return nr;
+	return nr; // 정수형 PID 리턴
 }
 
 #ifndef CONFIG_HAVE_COPY_THREAD_TLS

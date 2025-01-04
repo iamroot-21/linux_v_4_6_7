@@ -691,19 +691,19 @@ int tg_nop(struct task_group *tg, void *data)
 
 static void set_load_weight(struct task_struct *p)
 {
-	int prio = p->static_prio - MAX_RT_PRIO;
-	struct load_weight *load = &p->se.load;
+	int prio = p->static_prio - MAX_RT_PRIO; // nice 값 획득 0 ~ 40
+	struct load_weight *load = &p->se.load; // task 의 weight 를 갖는 구조체
 
 	/*
 	 * SCHED_IDLE tasks get minimal weight:
 	 */
-	if (idle_policy(p->policy)) {
+	if (idle_policy(p->policy)) { // SCHED_IDLE 을 사용한다면, 실제 설정된 값이 아니라, 아주 작은 weight 사용
 		load->weight = scale_load(WEIGHT_IDLEPRIO);
 		load->inv_weight = WMULT_IDLEPRIO;
 		return;
 	}
 
-	load->weight = scale_load(sched_prio_to_weight[prio]);
+	load->weight = scale_load(sched_prio_to_weight[prio]); // 우선순위가 높을수록 높은 weight 를 사용. (이후 스케줄링에서 다룸)
 	load->inv_weight = sched_prio_to_wmult[prio];
 }
 
@@ -3506,7 +3506,7 @@ void set_user_nice(struct task_struct *p, long nice)
 	 * We have to be careful, if called from sys_setpriority(),
 	 * the task might be in the middle of scheduling on another CPU.
 	 */
-	rq = task_rq_lock(p, &flags);
+	rq = task_rq_lock(p, &flags); // run queue 를 lock 을 잡으며 가져옴
 	/*
 	 * The RT priorities are set via sched_setscheduler(), but we still
 	 * allow the 'normal' nice value to be set - but as expected
@@ -3519,10 +3519,10 @@ void set_user_nice(struct task_struct *p, long nice)
 	}
 	queued = task_on_rq_queued(p);
 	if (queued)
-		dequeue_task(rq, p, DEQUEUE_SAVE);
+		dequeue_task(rq, p, DEQUEUE_SAVE); // task 를 dequeue
 
 	p->static_prio = NICE_TO_PRIO(nice);
-	set_load_weight(p);
+	set_load_weight(p); // 5-12
 	old_prio = p->prio;
 	p->prio = effective_prio(p);
 	delta = p->prio - old_prio;
@@ -3533,8 +3533,8 @@ void set_user_nice(struct task_struct *p, long nice)
 		 * If the task increased its priority or is running and
 		 * lowered its priority, then reschedule its CPU:
 		 */
-		if (delta < 0 || (delta > 0 && task_running(rq, p)))
-			resched_curr(rq);
+		if (delta < 0 || (delta > 0 && task_running(rq, p))) // 우선순위가 변경되는 경우
+			resched_curr(rq); // 다시 스케줄링
 	}
 out_unlock:
 	task_rq_unlock(rq, p, &flags);
