@@ -213,19 +213,19 @@ static void cpu_idle_loop(void)
 
 		__current_set_polling();
 		quiet_vmstat();
-		tick_nohz_idle_enter();
+		tick_nohz_idle_enter(); // cpu가 idle state에 진입하기 전에 idle 틱을 비활성화 한다.
 
-		while (!need_resched()) {
+		while (!need_resched()) { // 스케줄링이 필요 없을 경우
 			check_pgt_cache();
-			rmb();
+			rmb(); // barrier
 
-			if (cpu_is_offline(smp_processor_id())) {
-				cpuhp_report_idle_dead();
-				arch_cpu_idle_dead();
+			if (cpu_is_offline(smp_processor_id())) { //  현재 cpu가 offline인지 확인
+				cpuhp_report_idle_dead(); // cpu 상태를 CPUHP_AP_IDLE_DEAD로 설정
+				arch_cpu_idle_dead(); // 아키텍처별로 정의된 함수를 호출해 cpu를 shutdown
 			}
 
-			local_irq_disable();
-			arch_cpu_idle_enter();
+			local_irq_disable(); // 인터럽트 비활성화
+			arch_cpu_idle_enter(); // 아키텍처별로 idle 진입 전에 필요한 작업을 진행
 
 			/*
 			 * In poll mode we reenable interrupts and spin.
@@ -236,12 +236,12 @@ static void cpu_idle_loop(void)
 			 * know that the IPI is going to arrive right
 			 * away
 			 */
-			if (cpu_idle_force_poll || tick_check_broadcast_expired())
-				cpu_idle_poll();
+			if (cpu_idle_force_poll || tick_check_broadcast_expired()) // polling 상태로 변환이 필요한 경우
+				cpu_idle_poll(); // polling
 			else
-				cpuidle_idle_call();
+				cpuidle_idle_call(); // idle 상태로 진입
 
-			arch_cpu_idle_exit();
+			arch_cpu_idle_exit(); // idle exit
 		}
 
 		/*
@@ -253,7 +253,7 @@ static void cpu_idle_loop(void)
 		 * not have had an IPI to fold the state for us.
 		 */
 		preempt_set_need_resched();
-		tick_nohz_idle_exit();
+		tick_nohz_idle_exit(); // idle 틱 복구
 		__current_clr_polling();
 
 		/*
@@ -264,8 +264,8 @@ static void cpu_idle_loop(void)
 		 */
 		smp_mb__after_atomic();
 
-		sched_ttwu_pending();
-		schedule_preempt_disabled();
+		sched_ttwu_pending(); // remote cpu가 전달해준 wake up이 필요한 task list를 wakup 한다.
+		schedule_preempt_disabled(); // schedule 호출
 	}
 }
 

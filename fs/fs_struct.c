@@ -92,6 +92,9 @@ void free_fs_struct(struct fs_struct *fs)
 
 void exit_fs(struct task_struct *tsk)
 {
+	/**
+	 * @brief fs_struct 할당 해제
+	 */
 	struct fs_struct *fs = tsk->fs;
 
 	if (fs) {
@@ -99,11 +102,11 @@ void exit_fs(struct task_struct *tsk)
 		task_lock(tsk);
 		spin_lock(&fs->lock);
 		tsk->fs = NULL;
-		kill = !--fs->users;
+		kill = !--fs->users; // 참조 카운터 감소
 		spin_unlock(&fs->lock);
 		task_unlock(tsk);
-		if (kill)
-			free_fs_struct(fs);
+		if (kill) // 참조 카운터가 0이된 경우
+			free_fs_struct(fs); // fs_struct 할당 해제
 	}
 }
 

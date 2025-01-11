@@ -385,13 +385,16 @@ assign_new_owner:
  */
 static void exit_mm(struct task_struct *tsk)
 {
+	/**
+	 * @brief mm_struct 할당 해제
+	 */
 	struct mm_struct *mm = tsk->mm;
 	struct core_state *core_state;
 
 	mm_release(tsk, mm);
 	if (!mm)
 		return;
-	sync_mm_rss(mm);
+	sync_mm_rss(mm); // mm synchronize
 	/*
 	 * Serialize with any possible pending coredump.
 	 * We must hold mmap_sem around checking core_state
@@ -399,7 +402,7 @@ static void exit_mm(struct task_struct *tsk)
 	 * will increment ->nr_threads for each thread in the
 	 * group with ->mm != NULL.
 	 */
-	down_read(&mm->mmap_sem);
+	down_read(&mm->mmap_sem); // read count 감소
 	core_state = mm->core_state;
 	if (core_state) {
 		struct core_thread self;
@@ -651,7 +654,7 @@ static inline void check_stack_usage(void) {}
 
 void do_exit(long code)
 {
-	struct task_struct *tsk = current;
+	struct task_struct *tsk = current; // 현재 task의 task_struct를 가져옴
 	int group_dead;
 	TASKS_RCU(int tasks_rcu_i);
 
@@ -682,7 +685,7 @@ void do_exit(long code)
 	 * We're taking recursive faults here in do_exit. Safest is to just
 	 * leave this task alone and wait for reboot.
 	 */
-	if (unlikely(tsk->flags & PF_EXITING)) {
+	if (unlikely(tsk->flags & PF_EXITING)) { // task가 이미 종료 중인지 확인
 		pr_alert("Fixing recursive fault but reboot is needed!\n");
 		/*
 		 * We can do this unlocked here. The futex code uses
@@ -693,34 +696,34 @@ void do_exit(long code)
 		 * OWNER_DIED bit is set by now or we push the blocked
 		 * task into the wait for ever nirwana as well.
 		 */
-		tsk->flags |= PF_EXITPIDONE;
+		tsk->flags |= PF_EXITPIDONE; // task가 이미 종료된 것으로 처리
 		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule();
+		schedule(); // 스케줄링 실행
 	}
 
-	exit_signals(tsk);  /* sets PF_EXITING */
+	exit_signals(tsk);  /* sets PF_EXITING */ // PF_EXITING 플래그를 설정해 해당 태스크가 종료 중임을 알린다.
 	/*
 	 * tsk->flags are checked in the futex code to protect against
 	 * an exiting task cleaning up the robust pi futexes.
 	 */
-	smp_mb();
-	raw_spin_unlock_wait(&tsk->pi_lock);
+	smp_mb(); // barrier
+	raw_spin_unlock_wait(&tsk->pi_lock); // spin unlock
 
-	if (unlikely(in_atomic())) {
+	if (unlikely(in_atomic())) { // atomic case인 경우
 		pr_info("note: %s[%d] exited with preempt_count %d\n",
 			current->comm, task_pid_nr(current),
 			preempt_count());
-		preempt_count_set(PREEMPT_ENABLED);
+		preempt_count_set(PREEMPT_ENABLED); // 선점요청
 	}
 
 	/* sync mm's RSS info before statistics gathering */
-	if (tsk->mm)
-		sync_mm_rss(tsk->mm);
+	if (tsk->mm) // mm 할당 되어 있는 경우
+		sync_mm_rss(tsk->mm); // mm 동기화
 	acct_update_integrals(tsk);
-	group_dead = atomic_dec_and_test(&tsk->signal->live);
-	if (group_dead) {
-		hrtimer_cancel(&tsk->signal->real_timer);
-		exit_itimers(tsk->signal);
+	group_dead = atomic_dec_and_test(&tsk->signal->live); // signal->live를 1 감소
+	if (group_dead) { // signal->live 가 0인 경우
+		hrtimer_cancel(&tsk->signal->real_timer); // hrtimer 종료
+		exit_itimers(tsk->signal); // internal timer 종료
 		if (tsk->mm)
 			setmax_mm_hiwater_rss(&tsk->signal->maxrss, tsk->mm);
 	}
@@ -729,22 +732,22 @@ void do_exit(long code)
 		tty_audit_exit();
 	audit_free(tsk);
 
-	tsk->exit_code = code;
+	tsk->exit_code = code; // exit code 입력
 	taskstats_exit(tsk, group_dead);
 
-	exit_mm(tsk);
+	exit_mm(tsk); // mm 할당 해제
 
 	if (group_dead)
 		acct_process();
 	trace_sched_process_exit(tsk);
 
-	exit_sem(tsk);
-	exit_shm(tsk);
-	exit_files(tsk);
-	exit_fs(tsk);
-	if (group_dead)
+	exit_sem(tsk); // semaphore 할당 해제
+	exit_shm(tsk); // shared memory 할당 해제
+	exit_files(tsk); // files_struct 할당 해제
+	exit_fs(tsk); // fs_struct 할당 해제
+	if (group_dead) // signal->live 가 0인 경우
 		disassociate_ctty(1);
-	exit_task_namespaces(tsk);
+	exit_task_namespaces(tsk); // task_namespaces 할당 해제
 	exit_task_work(tsk);
 	exit_thread();
 
@@ -787,7 +790,7 @@ void do_exit(long code)
 	 * just to verify whether the pi state cleanup has been done
 	 * or not. In the worst case it loops once more.
 	 */
-	tsk->flags |= PF_EXITPIDONE;
+	tsk->flags |= PF_EXITPIDONE; // task가 종료된 것으로 처리
 
 	if (tsk->io_context)
 		exit_io_context(tsk);
@@ -801,7 +804,7 @@ void do_exit(long code)
 	validate_creds_for_do_exit(tsk);
 
 	check_stack_usage();
-	preempt_disable();
+	preempt_disable(); // 선점 해제
 	if (tsk->nr_dirtied)
 		__this_cpu_add(dirty_throttle_leaks, tsk->nr_dirtied);
 	exit_rcu();
@@ -823,9 +826,9 @@ void do_exit(long code)
 	raw_spin_unlock_wait(&tsk->pi_lock);
 
 	/* causes final put_task_struct in finish_task_switch(). */
-	tsk->state = TASK_DEAD;
+	tsk->state = TASK_DEAD; // Task 종료 처리
 	tsk->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
-	schedule();
+	schedule(); // 스케줄러 호출
 	BUG();
 	/* Avoid "noreturn function does return".  */
 	for (;;)

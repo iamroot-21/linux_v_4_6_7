@@ -97,6 +97,9 @@ static void update_rq_clock_task(struct rq *rq, s64 delta);
 
 void update_rq_clock(struct rq *rq)
 {
+	/**
+	 * @brief clock, clock_task 필드를 갱신한다.
+	 */
 	s64 delta;
 
 	lockdep_assert_held(&rq->lock);
@@ -1676,24 +1679,27 @@ static int ttwu_remote(struct task_struct *p, int wake_flags)
 #ifdef CONFIG_SMP
 void sched_ttwu_pending(void)
 {
+	/**
+	 * @brief wakeup이 필요한 task 리스트를 wakeup 한다.
+	 */
 	struct rq *rq = this_rq();
-	struct llist_node *llist = llist_del_all(&rq->wake_list);
+	struct llist_node *llist = llist_del_all(&rq->wake_list); // wake_list 를 리턴받고 초기화시킴
 	struct task_struct *p;
 	unsigned long flags;
 
-	if (!llist)
+	if (!llist) // wake up list가 없는 경우
 		return;
 
-	raw_spin_lock_irqsave(&rq->lock, flags);
+	raw_spin_lock_irqsave(&rq->lock, flags); // spin lock
 	lockdep_pin_lock(&rq->lock);
 
-	while (llist) {
-		p = llist_entry(llist, struct task_struct, wake_entry);
-		llist = llist_next(llist);
-		ttwu_do_activate(rq, p, 0);
+	while (llist) { // wakeup list가 있는 경우
+		p = llist_entry(llist, struct task_struct, wake_entry); // wakeup list에서 task_struct로 변경
+		llist = llist_next(llist); // 다음 값으로 이동
+		ttwu_do_activate(rq, p, 0); // 활성화
 	}
 
-	lockdep_unpin_lock(&rq->lock);
+	lockdep_unpin_lock(&rq->lock); // spin unlock
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 }
 
@@ -2235,34 +2241,37 @@ int sysctl_schedstats(struct ctl_table *table, int write,
  */
 int sched_fork(unsigned long clone_flags, struct task_struct *p)
 {
+	/**
+	 * @brief fork된 task의 스케줄링 정보를 설정한다.
+	 */
 	unsigned long flags;
-	int cpu = get_cpu();
+	int cpu = get_cpu(); // current cpu id를 가져옴
 
-	__sched_fork(clone_flags, p);
+	__sched_fork(clone_flags, p); // task가 스케줄링되기 위해 필요한 스케줄러 관련 필드들이 초기화된다.
 	/*
 	 * We mark the process as running here. This guarantees that
 	 * nobody will actually run it, and a signal or other external
 	 * event cannot wake it up and insert it on the runqueue either.
 	 */
-	p->state = TASK_RUNNING;
+	p->state = TASK_RUNNING; // state 값을 미리 TASK_RUNNING으로 변경, 외부 시그널에 의해 wakeup, enqueue 되는 현상을 막음
 
 	/*
 	 * Make sure we do not leak PI boosting priority to the child.
 	 */
-	p->prio = current->normal_prio;
+	p->prio = current->normal_prio; // 부모의 normal_priority를 상속받음
 
 	/*
 	 * Revert to default priority/policy on fork if requested.
 	 */
-	if (unlikely(p->sched_reset_on_fork)) {
-		if (task_has_dl_policy(p) || task_has_rt_policy(p)) {
-			p->policy = SCHED_NORMAL;
+	if (unlikely(p->sched_reset_on_fork)) { // 스케줄링 정책 초기화 요청이 있을 경우
+		if (task_has_dl_policy(p) || task_has_rt_policy(p)) { // 데드라인 태스크이거나 RT 태스크일 경우
+			p->policy = SCHED_NORMAL; // Normal task로 변경
 			p->static_prio = NICE_TO_PRIO(0);
 			p->rt_priority = 0;
-		} else if (PRIO_TO_NICE(p->static_prio) < 0)
-			p->static_prio = NICE_TO_PRIO(0);
+		} else if (PRIO_TO_NICE(p->static_prio) < 0) // static priority가 120보다 작을 경우
+			p->static_prio = NICE_TO_PRIO(0); // static_priority를 nice 값 0에 대응하는 120로 변경
 
-		p->prio = p->normal_prio = __normal_prio(p);
+		p->prio = p->normal_prio = __normal_prio(p); // dynamic, normal priority를 재설정된 static priority와 동일하게 설정한다.
 		set_load_weight(p);
 
 		/*
@@ -2272,16 +2281,16 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->sched_reset_on_fork = 0;
 	}
 
-	if (dl_prio(p->prio)) {
+	if (dl_prio(p->prio)) { // dynamic priority를 기준으로 스케줄링 정책을 설정
 		put_cpu();
 		return -EAGAIN;
-	} else if (rt_prio(p->prio)) {
+	} else if (rt_prio(p->prio)) { // rt priority를 기준으로 스케줄링 정책을 설정
 		p->sched_class = &rt_sched_class;
 	} else {
 		p->sched_class = &fair_sched_class;
 	}
 
-	if (p->sched_class->task_fork)
+	if (p->sched_class->task_fork) // 정책별 task_fork 함수 실행
 		p->sched_class->task_fork(p);
 
 	/*
@@ -2292,7 +2301,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	 * Silence PROVE_RCU.
 	 */
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
-	set_task_cpu(p, cpu);
+	set_task_cpu(p, cpu); // task가 실행할 cpu를 설정한다.
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 
 #ifdef CONFIG_SCHED_INFO
@@ -2300,15 +2309,15 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		memset(&p->sched_info, 0, sizeof(p->sched_info));
 #endif
 #if defined(CONFIG_SMP)
-	p->on_cpu = 0;
+	p->on_cpu = 0; // cpu가 실행중이지 않으므로 0 입력
 #endif
-	init_task_preempt_count(p);
+	init_task_preempt_count(p); // preempt count 초기화 
 #ifdef CONFIG_SMP
 	plist_node_init(&p->pushable_tasks, MAX_PRIO);
 	RB_CLEAR_NODE(&p->pushable_dl_tasks);
 #endif
 
-	put_cpu();
+	put_cpu(); // 선점 활성화
 	return 0;
 }
 

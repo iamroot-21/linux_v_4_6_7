@@ -3127,6 +3127,9 @@ static void check_spread(struct cfs_rq *cfs_rq, struct sched_entity *se)
 static void
 place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 {
+	/**
+	 * @brief 태스크를 표현하는 엔티티의 vruntime을 조정한다.
+	 */
 	u64 vruntime = cfs_rq->min_vruntime;
 
 	/*
@@ -8138,17 +8141,20 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
  */
 static void task_fork_fair(struct task_struct *p)
 {
+	/**
+	 * @brief 새로 생성된 normal 태스크를 위한 초기화를 진행한다.
+	 */
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se, *curr;
-	int this_cpu = smp_processor_id();
+	int this_cpu = smp_processor_id(); // cpu id
 	struct rq *rq = this_rq();
 	unsigned long flags;
 
-	raw_spin_lock_irqsave(&rq->lock, flags);
+	raw_spin_lock_irqsave(&rq->lock, flags); // irq save
 
-	update_rq_clock(rq);
+	update_rq_clock(rq); // 런큐의 시간 정보를 나타내는 clock, clock task 필드를 갱신한다.
 
-	cfs_rq = task_cfs_rq(current);
+	cfs_rq = task_cfs_rq(current); // 부모 task가 enqueue되는 CFS 런큐를 가져온다.
 	curr = cfs_rq->curr;
 
 	/*
@@ -8158,14 +8164,14 @@ static void task_fork_fair(struct task_struct *p)
 	 * of child point to valid ones.
 	 */
 	rcu_read_lock();
-	__set_task_cpu(p, this_cpu);
+	__set_task_cpu(p, this_cpu); // 태스크가 current cpu에서 실행하도록 관련 필드를 설정한다.
 	rcu_read_unlock();
 
-	update_curr(cfs_rq);
+	update_curr(cfs_rq); // current 엔티티와 CFS 런큐의 런타임 정보와 관편된 필드를 갱신한다 (exec_start, sum_exec_runtime, vruntime, min_vruntime)
 
-	if (curr)
-		se->vruntime = curr->vruntime;
-	place_entity(cfs_rq, se, 1);
+	if (curr) // 런큐를 가져온 경우
+		se->vruntime = curr->vruntime; // 스케줄링 엔티티 업데이트
+	place_entity(cfs_rq, se, 1); // vruntime 조정
 
 	if (sysctl_sched_child_runs_first && curr && entity_before(curr, se)) {
 		/*
@@ -8176,7 +8182,7 @@ static void task_fork_fair(struct task_struct *p)
 		resched_curr(rq);
 	}
 
-	se->vruntime -= cfs_rq->min_vruntime;
+	se->vruntime -= cfs_rq->min_vruntime; // vruntime 재조정
 
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 }

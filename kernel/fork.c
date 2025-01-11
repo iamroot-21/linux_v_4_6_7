@@ -345,24 +345,27 @@ void set_task_stack_end_magic(struct task_struct *tsk)
 
 static struct task_struct *dup_task_struct(struct task_struct *orig)
 {
+	/**
+	 * @brief 생성된 task의 task_struct, thread_info 구조체 설정
+	 */
 	struct task_struct *tsk;
 	struct thread_info *ti;
-	int node = tsk_fork_get_node(orig);
+	int node = tsk_fork_get_node(orig); // 복사할 task 의 node를 가져옴
 	int err;
 
-	tsk = alloc_task_struct_node(node);
-	if (!tsk)
+	tsk = alloc_task_struct_node(node); // node에서 task_struct를 할당
+	if (!tsk) // 할당 실패 케이스
 		return NULL;
 
-	ti = alloc_thread_info_node(tsk, node);
-	if (!ti)
+	ti = alloc_thread_info_node(tsk, node); // node에서 thread_info 할당
+	if (!ti) // thread info 할당 실패 케이스
 		goto free_tsk;
 
-	err = arch_dup_task_struct(tsk, orig);
+	err = arch_dup_task_struct(tsk, orig); // 할당받은 task_struct 값을 기존 task 값으로 입력
 	if (err)
 		goto free_ti;
 
-	tsk->stack = ti;
+	tsk->stack = ti; // task_struct에 thread_info 입력
 #ifdef CONFIG_SECCOMP
 	/*
 	 * We must handle setting up seccomp filters once we're under
@@ -373,9 +376,9 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	tsk->seccomp.filter = NULL;
 #endif
 
-	setup_thread_stack(tsk, orig);
+	setup_thread_stack(tsk, orig); // 할당받은 thread_info 값을 부모 task의 thread_info 값으로 덮어쓴다.
 	clear_user_return_notifier(tsk);
-	clear_tsk_need_resched(tsk);
+	clear_tsk_need_resched(tsk); // 새로 할당한 thread_info 에서 TIF_NEED_RESCHED 플래그가 제거
 	set_task_stack_end_magic(tsk);
 
 #ifdef CONFIG_CC_STACKPROTECTOR
@@ -386,7 +389,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	 * One for us, one for whoever does the "release_task()" (usually
 	 * parent)
 	 */
-	atomic_set(&tsk->usage, 2);
+	atomic_set(&tsk->usage, 2); // task usage count 증가, 추후 task가 종료될 때 release_task() 에서 1 감소시키고, 스케줄러에서 1 감소시키므로 2로 설정
 #ifdef CONFIG_BLK_DEV_IO_TRACE
 	tsk->btrace_seq = 0;
 #endif
@@ -398,7 +401,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 
 	kcov_task_init(tsk);
 
-	return tsk;
+	return tsk; // 할당받은 task_struct 리턴
 
 free_ti:
 	free_thread_info(ti);
@@ -1006,6 +1009,9 @@ fail_nomem:
 
 static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
 {
+	/**
+	 * @brief 현재 task의 fs_struct를 복사해 tsk에 입력
+	 */
 	struct fs_struct *fs = current->fs;
 	if (clone_flags & CLONE_FS) {
 		/* tsk->fs is already what we want */
@@ -1014,11 +1020,11 @@ static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
 			spin_unlock(&fs->lock);
 			return -EAGAIN;
 		}
-		fs->users++;
+		fs->users++; // 사용자 카운터 증가
 		spin_unlock(&fs->lock);
 		return 0;
 	}
-	tsk->fs = copy_fs_struct(fs);
+	tsk->fs = copy_fs_struct(fs); // fs_struct 복사 후 tsk->fs에 입력력
 	if (!tsk->fs)
 		return -ENOMEM;
 	return 0;
@@ -1026,14 +1032,17 @@ static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
 
 static int copy_files(unsigned long clone_flags, struct task_struct *tsk)
 {
+	/**
+	 * @brief 현재 task 의 file_struct를 tsk 로 복사
+	 */
 	struct files_struct *oldf, *newf;
 	int error = 0;
 
 	/*
 	 * A background process may not have any files ...
 	 */
-	oldf = current->files;
-	if (!oldf)
+	oldf = current->files; // 현재 task의 file struct
+	if (!oldf) // file_struct가 없을 경우 에러 처리
 		goto out;
 
 	if (clone_flags & CLONE_FILES) {
@@ -1041,12 +1050,12 @@ static int copy_files(unsigned long clone_flags, struct task_struct *tsk)
 		goto out;
 	}
 
-	newf = dup_fd(oldf, &error);
-	if (!newf)
+	newf = dup_fd(oldf, &error); // old file struct를 복사
+	if (!newf) // 복사 실패인 경우 에러 처리
 		goto out;
 
-	tsk->files = newf;
-	error = 0;
+	tsk->files = newf; // 복사한 file struct를 tsk 에 입력
+	error = 0; // return 값 처리
 out:
 	return error;
 }
@@ -1079,18 +1088,21 @@ static int copy_io(unsigned long clone_flags, struct task_struct *tsk)
 
 static int copy_sighand(unsigned long clone_flags, struct task_struct *tsk)
 {
+	/**
+	 * @brief current task의 signal handler 정보를 복사해 tsk에 입력
+	 */
 	struct sighand_struct *sig;
 
 	if (clone_flags & CLONE_SIGHAND) {
 		atomic_inc(&current->sighand->count);
 		return 0;
 	}
-	sig = kmem_cache_alloc(sighand_cachep, GFP_KERNEL);
-	rcu_assign_pointer(tsk->sighand, sig);
+	sig = kmem_cache_alloc(sighand_cachep, GFP_KERNEL); // kmem_cache 할당
+	rcu_assign_pointer(tsk->sighand, sig); // 할당받은 signal handler를 task에 입력
 	if (!sig)
 		return -ENOMEM;
 
-	atomic_set(&sig->count, 1);
+	atomic_set(&sig->count, 1); // 참조 카운터 증가
 	memcpy(sig->action, current->sighand->action, sizeof(sig->action));
 	return 0;
 }
@@ -1305,7 +1317,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 				current->nsproxy->pid_ns_for_children))
 			return ERR_PTR(-EINVAL);
 	}
-
+// ... 5-15)
 	retval = security_task_create(clone_flags);
 	if (retval)
 		goto fork_out;
@@ -1348,9 +1360,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	delayacct_tsk_init(p);	/* Must remain after dup_task_struct() */
 	p->flags &= ~(PF_SUPERPRIV | PF_WQ_WORKER);
 	p->flags |= PF_FORKNOEXEC;
-	INIT_LIST_HEAD(&p->children);
-	INIT_LIST_HEAD(&p->sibling);
-	rcu_copy_process(p);
+// 5-18)
+	INIT_LIST_HEAD(&p->children); // 생성한 task의 children 필드 초기화
+	INIT_LIST_HEAD(&p->sibling); // 생성한 task의 sibling 필드 초기화 (부모 task의 children 필드에 연결될 예정)
+	rcu_copy_process(p); 
 	p->vfork_done = NULL;
 	spin_lock_init(&p->alloc_lock);
 
@@ -1430,6 +1443,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 
 	/* Perform scheduler related setup. Assign this task to a CPU. */
 	retval = sched_fork(clone_flags, p);
+// ... 5-15 end)
 	if (retval)
 		goto bad_fork_cleanup_policy;
 
@@ -1444,44 +1458,45 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	retval = copy_semundo(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_audit;
-	retval = copy_files(clone_flags, p);
-	if (retval)
+// ... 5-16)
+	retval = copy_files(clone_flags, p); // Task가 open한 파일 정보를 관리하는 files_struct 구조를 생성해 부모의 file_struct 구조체 내용을 복사
+	if (retval) // file struct copy fail case
 		goto bad_fork_cleanup_semundo;
-	retval = copy_fs(clone_flags, p);
+	retval = copy_fs(clone_flags, p); // 디렉토리 경로를 저장하는 fs를 복사
 	if (retval)
 		goto bad_fork_cleanup_files;
-	retval = copy_sighand(clone_flags, p);
+	retval = copy_sighand(clone_flags, p); // signal handler 정보 복사
 	if (retval)
 		goto bad_fork_cleanup_fs;
-	retval = copy_signal(clone_flags, p);
+	retval = copy_signal(clone_flags, p); // signal_struct 복사
 	if (retval)
 		goto bad_fork_cleanup_sighand;
-	retval = copy_mm(clone_flags, p);
+	retval = copy_mm(clone_flags, p); // mm_struct 복사
 	if (retval)
 		goto bad_fork_cleanup_signal;
-	retval = copy_namespaces(clone_flags, p);
+	retval = copy_namespaces(clone_flags, p); // namespaces 복사
 	if (retval)
 		goto bad_fork_cleanup_mm;
-	retval = copy_io(clone_flags, p);
+	retval = copy_io(clone_flags, p); // io_context 복사
 	if (retval)
 		goto bad_fork_cleanup_namespaces;
-	retval = copy_thread_tls(clone_flags, stack_start, stack_size, p, tls);
+	retval = copy_thread_tls(clone_flags, stack_start, stack_size, p, tls); // cpu_context 복사
 	if (retval)
 		goto bad_fork_cleanup_io;
-
-	if (pid != &init_struct_pid) {
-		pid = alloc_pid(p->nsproxy->pid_ns_for_children);
-		if (IS_ERR(pid)) {
+// ... 5-17)
+	if (pid != &init_struct_pid) { // swapper가 사용하는 pid 구조체와 다른지 확인
+		pid = alloc_pid(p->nsproxy->pid_ns_for_children); // 다른 경우 pid 할당
+		if (IS_ERR(pid)) { // 할당 실패 케이스
 			retval = PTR_ERR(pid);
 			goto bad_fork_cleanup_io;
 		}
 	}
 
-	p->set_child_tid = (clone_flags & CLONE_CHILD_SETTID) ? child_tidptr : NULL;
+	p->set_child_tid = (clone_flags & CLONE_CHILD_SETTID) ? child_tidptr : NULL; // SETTID 플래그 처리
 	/*
 	 * Clear TID on mm_release()?
 	 */
-	p->clear_child_tid = (clone_flags & CLONE_CHILD_CLEARTID) ? child_tidptr : NULL;
+	p->clear_child_tid = (clone_flags & CLONE_CHILD_CLEARTID) ? child_tidptr : NULL; //  CLEARTID 플래그 처리
 #ifdef CONFIG_BLOCK
 	p->plug = NULL;
 #endif
@@ -1496,8 +1511,8 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	/*
 	 * sigaltstack should be cleared when sharing the same VM
 	 */
-	if ((clone_flags & (CLONE_VM|CLONE_VFORK)) == CLONE_VM)
-		p->sas_ss_sp = p->sas_ss_size = 0;
+	if ((clone_flags & (CLONE_VM|CLONE_VFORK)) == CLONE_VM) // CLONE_VM 를 사용하고 CLONE_VFORK 를 사용하지 않는 경우
+		p->sas_ss_sp = p->sas_ss_size = 0; // 새로 생성할 task의 signal stack을 0으로 초기화
 
 	/*
 	 * Syscall tracing and stepping should be turned off in the
@@ -1511,26 +1526,26 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	clear_all_latency_tracing(p);
 
 	/* ok, now we should be set up.. */
-	p->pid = pid_nr(pid);
-	if (clone_flags & CLONE_THREAD) {
+	p->pid = pid_nr(pid); // global pid 를 구한다.
+	if (clone_flags & CLONE_THREAD) { // Thread 일 경우
 		p->exit_signal = -1;
-		p->group_leader = current->group_leader;
-		p->tgid = current->tgid;
-	} else {
-		if (clone_flags & CLONE_PARENT)
-			p->exit_signal = current->group_leader->exit_signal;
-		else
-			p->exit_signal = (clone_flags & CSIGNAL);
-		p->group_leader = p;
-		p->tgid = p->pid;
+		p->group_leader = current->group_leader; // 부모 task가 group leader
+		p->tgid = current->tgid; // 부모 task의 tgid를 가져옴
+	} else { // process 일 경우
+		if (clone_flags & CLONE_PARENT) // 부모 task를 복사하는 경우
+			p->exit_signal = current->group_leader->exit_signal; // 부모 task의 exit_signal을 가져옴
+		else // 복사가 아닌 생성인 경우
+			p->exit_signal = (clone_flags & CSIGNAL); // exit_signal  입력
+		p->group_leader = p; // 프로세스 이므로 생성한 pid가 group_leader
+		p->tgid = p->pid; // task group id = pid
 	}
 
-	p->nr_dirtied = 0;
-	p->nr_dirtied_pause = 128 >> (PAGE_SHIFT - 10);
-	p->dirty_paused_when = 0;
+	p->nr_dirtied = 0; // 태스크 단위로 누적해서 관리되는 더티 페이지 개수 초기화
+	p->nr_dirtied_pause = 128 >> (PAGE_SHIFT - 10); // 페이지의 변경사항을 backing device로 writeback 해야하는 pre-task threshold
+	p->dirty_paused_when = 0; // writeback을 시도한 가장 최근의 jiffies
 
 	p->pdeath_signal = 0;
-	INIT_LIST_HEAD(&p->thread_group);
+	INIT_LIST_HEAD(&p->thread_group); // thread 그룹 안의 모든 스레드를 연결하는 필드인 thread_group을 초기화한다.
 	p->task_works = NULL;
 
 	/*
@@ -1539,7 +1554,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * between here and cgroup_post_fork() if an organisation operation is in
 	 * progress.
 	 */
-	retval = cgroup_can_fork(p);
+	retval = cgroup_can_fork(p); // 서브시스템이 구현한 can_fork 를 각각 호출
 	if (retval)
 		goto bad_fork_free_pid;
 
@@ -1550,10 +1565,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	write_lock_irq(&tasklist_lock);
 
 	/* CLONE_PARENT re-uses the old parent */
-	if (clone_flags & (CLONE_PARENT|CLONE_THREAD)) {
+	if (clone_flags & (CLONE_PARENT|CLONE_THREAD)) { // 부모 task 의 real_parent, parent_exec_id를 받음
 		p->real_parent = current->real_parent;
 		p->parent_exec_id = current->parent_exec_id;
-	} else {
+	} else { // 생성하는 task가 부모 task
 		p->real_parent = current;
 		p->parent_exec_id = current->self_exec_id;
 	}
@@ -1575,52 +1590,53 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * thread can't slip out of an OOM kill (or normal SIGKILL).
 	*/
 	recalc_sigpending();
-	if (signal_pending(current)) {
+	if (signal_pending(current)) { // current task 가 처리해야 할 signal이 있을 경우 생성 중지
 		spin_unlock(&current->sighand->siglock);
 		write_unlock_irq(&tasklist_lock);
 		retval = -ERESTARTNOINTR;
-		goto bad_fork_cancel_cgroup;
+		goto bad_fork_cancel_cgroup; // error case
 	}
 
-	if (likely(p->pid)) {
+	if (likely(p->pid)) { // pid 할당이 성공한 경우
 		ptrace_init_task(p, (clone_flags & CLONE_PTRACE) || trace);
 
-		init_task_pid(p, PIDTYPE_PID, pid);
-		if (thread_group_leader(p)) {
-			init_task_pid(p, PIDTYPE_PGID, task_pgrp(current));
-			init_task_pid(p, PIDTYPE_SID, task_session(current));
+		init_task_pid(p, PIDTYPE_PID, pid); // pid 구조체를 태스크의 pids 필드에 연결
+		if (thread_group_leader(p)) { // 해당 프로세스를 생성 중인 경우 (thread group leader 인 경우)
+			init_task_pid(p, PIDTYPE_PGID, task_pgrp(current)); // PGID 초기화
+			init_task_pid(p, PIDTYPE_SID, task_session(current)); // SID 초기화
 
-			if (is_child_reaper(pid)) {
+			if (is_child_reaper(pid)) { // pid 구조체를 특정 네임스페이스의 init 태스크가 사용한다면 해당 pid ns의 child reaper로 등록
 				ns_of_pid(pid)->child_reaper = p;
 				p->signal->flags |= SIGNAL_UNKILLABLE;
 			}
 
 			p->signal->leader_pid = pid;
 			p->signal->tty = tty_kref_get(current->signal->tty);
-			list_add_tail(&p->sibling, &p->real_parent->children);
-			list_add_tail_rcu(&p->tasks, &init_task.tasks);
-			attach_pid(p, PIDTYPE_PGID);
+			list_add_tail(&p->sibling, &p->real_parent->children); //  parent->children 리스트 마지막에 p->sibling 추가
+			list_add_tail_rcu(&p->tasks, &init_task.tasks); // init_task.tasks 의 마지막에 p->tasks 추가
+			attach_pid(p, PIDTYPE_PGID); // pid 구조체의 tasks[] 필드를 설정, 
 			attach_pid(p, PIDTYPE_SID);
-			__this_cpu_inc(process_counts);
-		} else {
-			current->signal->nr_threads++;
-			atomic_inc(&current->signal->live);
-			atomic_inc(&current->signal->sigcnt);
-			list_add_tail_rcu(&p->thread_group,
+			__this_cpu_inc(process_counts); // process count 증가
+		} else { // thread를 생성하는 경우
+			current->signal->nr_threads++; // thread count 증가
+			atomic_inc(&current->signal->live); // signal_struct 구조체의 nr_threads 필드 증가
+			atomic_inc(&current->signal->sigcnt); // signal count 증가
+			list_add_tail_rcu(&p->thread_group, // 부모 task의 group leader에 현재 task 의 thread_group 추가
 					  &p->group_leader->thread_group);
-			list_add_tail_rcu(&p->thread_node,
+			list_add_tail_rcu(&p->thread_node, // 해당 task 에서 발생하는 signal을 받을 signal_handler를 연결
 					  &p->signal->thread_head);
 		}
-		attach_pid(p, PIDTYPE_PID);
-		nr_threads++;
+// ... 5-18 end)
+		attach_pid(p, PIDTYPE_PID); // pid 구조체의 tasks 필드를 설정
+		nr_threads++; // 현재 시스템에서 사용 중인 thread 개수 증가
 	}
 
-	total_forks++;
+	total_forks++; // fork count 증가
 	spin_unlock(&current->sighand->siglock);
 	syscall_tracepoint_update(p);
-	write_unlock_irq(&tasklist_lock);
+	write_unlock_irq(&tasklist_lock); // irq unlock
 
-	proc_fork_connector(p);
+	proc_fork_connector(p); // 유저에게 task가 fork 되었음을 알림
 	cgroup_post_fork(p);
 	threadgroup_change_end(current);
 	perf_event_fork(p);
@@ -1628,7 +1644,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	trace_task_newtask(p, clone_flags);
 	uprobe_copy_process(p, clone_flags);
 
-	return p;
+	return p; // 생성한 task return
 
 bad_fork_cancel_cgroup:
 	cgroup_cancel_fork(p);
