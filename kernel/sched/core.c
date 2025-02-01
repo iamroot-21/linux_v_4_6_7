@@ -2918,18 +2918,21 @@ unsigned long long task_sched_runtime(struct task_struct *p)
  */
 void scheduler_tick(void)
 {
+	/**
+	 * @brief 함수를 실행 중인 current cpu의 시간 정보, 로드 정보를 갱신한다.
+	 */
 	int cpu = smp_processor_id();
 	struct rq *rq = cpu_rq(cpu);
 	struct task_struct *curr = rq->curr;
 
 	sched_clock_tick();
 
-	raw_spin_lock(&rq->lock);
-	update_rq_clock(rq);
-	curr->sched_class->task_tick(rq, curr, 0);
-	update_cpu_load_active(rq);
-	calc_global_load_tick(rq);
-	raw_spin_unlock(&rq->lock);
+	raw_spin_lock(&rq->lock); // run queue spin lock
+	update_rq_clock(rq); // clock 필드를 최신 값으로 갱신한다.
+	curr->sched_class->task_tick(rq, curr, 0); // 스케줄링 클래스 별 task_tick 함수를 호출
+	update_cpu_load_active(rq); // current cpu 런큐의 load 정보를 갱신
+	calc_global_load_tick(rq); // 런큐의 active 태스크 개수를 갱신
+	raw_spin_unlock(&rq->lock);// run queue spin unlock
 
 	perf_event_task_tick();
 
@@ -2937,7 +2940,7 @@ void scheduler_tick(void)
 	rq->idle_balance = idle_cpu(cpu);
 	trigger_load_balance(rq);
 #endif
-	rq_last_tick_reset(rq);
+	rq_last_tick_reset(rq); // 최근 시간 정보를 갱신
 }
 
 #ifdef CONFIG_NO_HZ_FULL
@@ -3251,14 +3254,17 @@ static inline void sched_submit_work(struct task_struct *tsk)
 
 asmlinkage __visible void __sched schedule(void)
 {
-	struct task_struct *tsk = current;
+	/**
+	 * @brief 스케줄링 시도
+	 */
+	struct task_struct *tsk = current; // current task 를 가져옴
 
 	sched_submit_work(tsk);
 	do {
-		preempt_disable();
-		__schedule(false);
-		sched_preempt_enable_no_resched();
-	} while (need_resched());
+		preempt_disable(); // 선점 비활성화
+		__schedule(false); // TODO 6-7) 스케줄링 시도
+		sched_preempt_enable_no_resched(); // 선점 활성화
+	} while (need_resched()); // rescheduling이 필요한 시점까지 반복
 }
 EXPORT_SYMBOL(schedule);
 
@@ -3374,19 +3380,22 @@ EXPORT_SYMBOL_GPL(preempt_schedule_notrace);
  */
 asmlinkage __visible void __sched preempt_schedule_irq(void)
 {
+	/**
+	 * @brief IRQ 컨텍스트에서 인터럽트 핸들링 후에 스케줄링을 시도할 때 사용한다.
+	 */
 	enum ctx_state prev_state;
 
 	/* Catch callers which need to be fixed */
-	BUG_ON(preempt_count() || !irqs_disabled());
+	BUG_ON(preempt_count() || !irqs_disabled()); // 선점 불가거나 인터럽트가 활성화된 경우
 
 	prev_state = exception_enter();
 
 	do {
-		preempt_disable();
-		local_irq_enable();
-		__schedule(true);
-		local_irq_disable();
-		sched_preempt_enable_no_resched();
+		preempt_disable(); // 선점 비활성화
+		local_irq_enable(); // 인터럽트 활성화
+		__schedule(true); // TODO 7-6) 스케줄링 시도
+		local_irq_disable(); // 인터럽트 비활성화
+		sched_preempt_enable_no_resched(); // 선점 활성화
 	} while (need_resched());
 
 	exception_exit(prev_state);
@@ -5035,15 +5044,18 @@ void init_idle_bootup_task(struct task_struct *idle)
  */
 void init_idle(struct task_struct *idle, int cpu)
 {
+	/**
+	 * @brief idle 스레드를 초기화한다.
+	 */
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&idle->pi_lock, flags);
 	raw_spin_lock(&rq->lock);
 
-	__sched_fork(0, idle);
-	idle->state = TASK_RUNNING;
-	idle->se.exec_start = sched_clock();
+	__sched_fork(0, idle); // 스케줄러 관련 필드 초기화
+	idle->state = TASK_RUNNING; // task state -> TASK_RUNNING
+	idle->se.exec_start = sched_clock(); // 시작 시간 입력
 
 	kasan_unpoison_task_stack(idle);
 
@@ -5054,7 +5066,7 @@ void init_idle(struct task_struct *idle, int cpu)
 	 *
 	 * And since this is boot we can forgo the serialization.
 	 */
-	set_cpus_allowed_common(idle, cpumask_of(cpu));
+	set_cpus_allowed_common(idle, cpumask_of(cpu)); // 이 cpu 에서만 실행되도록 설정
 #endif
 	/*
 	 * We're having a chicken and egg problem, even though we are
@@ -5066,25 +5078,25 @@ void init_idle(struct task_struct *idle, int cpu)
 	 *
 	 * Silence PROVE_RCU
 	 */
-	rcu_read_lock();
-	__set_task_cpu(idle, cpu);
-	rcu_read_unlock();
+	rcu_read_lock(); // read copy update lock
+	__set_task_cpu(idle, cpu); // init 스레드가 새로운 cpu에서 실행되도록 관련 필드 설정
+	rcu_read_unlock(); // read copy update unlock
 
-	rq->curr = rq->idle = idle;
-	idle->on_rq = TASK_ON_RQ_QUEUED;
+	rq->curr = rq->idle = idle; // idle thread 설정
+	idle->on_rq = TASK_ON_RQ_QUEUED; // 런큐에 enqueue 되었다고 설정
 #ifdef CONFIG_SMP
-	idle->on_cpu = 1;
+	idle->on_cpu = 1; // idle 스레드가 current 태스크로 동작 중임을 설정
 #endif
 	raw_spin_unlock(&rq->lock);
 	raw_spin_unlock_irqrestore(&idle->pi_lock, flags);
 
 	/* Set the preempt count _outside_ the spinlocks! */
-	init_idle_preempt_count(idle, cpu);
+	init_idle_preempt_count(idle, cpu); // 선점 가능으로 설정
 
 	/*
 	 * The idle tasks have their own, simple scheduling class:
 	 */
-	idle->sched_class = &idle_sched_class;
+	idle->sched_class = &idle_sched_class;  // idle 스레드의 스케줄링 클래스를 idle 스케줄링 클래스로 설정한다.
 	ftrace_graph_init_idle_task(idle, cpu);
 	vtime_init_idle(idle, cpu);
 #ifdef CONFIG_SMP

@@ -50,7 +50,7 @@ static inline void idle_init(unsigned int cpu)
 {
 	struct task_struct *tsk = per_cpu(idle_threads, cpu);
 
-	if (!tsk) {
+	if (!tsk) { // cpu에 idle 스레드가 생성되지 않은 케이스 
 		tsk = fork_idle(cpu);
 		if (IS_ERR(tsk))
 			pr_err("SMP: fork_idle() failed for CPU %u\n", cpu);

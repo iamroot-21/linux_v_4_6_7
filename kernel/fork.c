@@ -1702,11 +1702,14 @@ static inline void init_idle_pids(struct pid_link *links)
 
 struct task_struct *fork_idle(int cpu)
 {
+	/**
+	 * @brief idle 스레드를 생성하고 초기화한다.
+	 */
 	struct task_struct *task;
-	task = copy_process(CLONE_VM, 0, 0, NULL, &init_struct_pid, 0, 0);
-	if (!IS_ERR(task)) {
+	task = copy_process(CLONE_VM, 0, 0, NULL, &init_struct_pid, 0, 0); // process copy
+	if (!IS_ERR(task)) { // copy가 정상적으로 진행된 경우
 		init_idle_pids(task->pids);
-		init_idle(task, cpu);
+		init_idle(task, cpu); // TODO 5-29
 	}
 
 	return task;

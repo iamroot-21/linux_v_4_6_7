@@ -271,6 +271,9 @@ static void cpu_idle_loop(void)
 
 void cpu_startup_entry(enum cpuhp_state state)
 {
+	/**
+	 * @brief idle 루프로 진입
+	 */
 	/*
 	 * This #ifdef needs to die, but it's too late in the cycle to
 	 * make this generic (arm and sh have never invoked the canary
@@ -286,7 +289,7 @@ void cpu_startup_entry(enum cpuhp_state state)
 	 */
 	boot_init_stack_canary();
 #endif
-	arch_cpu_idle_prepare();
-	cpuhp_online_idle(state);
-	cpu_idle_loop();
+	arch_cpu_idle_prepare(); // 아키텍쳐 별로 cpu가 idle 상태로 들어가기 위한 준비를 한다.
+	cpuhp_online_idle(state); // current cpu 상태를 CPUHP_ONLINE_IDLE로 설정한다.
+	cpu_idle_loop(); // cpu idle loop 실행
 }
