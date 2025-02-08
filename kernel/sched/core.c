@@ -448,26 +448,29 @@ void wake_up_q(struct wake_q_head *head)
  */
 void resched_curr(struct rq *rq)
 {
+	/**
+	 * @brief 스케줄링을 요청하는 플래그 설정하기
+	 */
 	struct task_struct *curr = rq->curr;
 	int cpu;
 
 	lockdep_assert_held(&rq->lock);
 
-	if (test_tsk_need_resched(curr))
+	if (test_tsk_need_resched(curr)) // TIF_NEED_RESCHED 플래그가 설정되어 있는지 확인
 		return;
 
-	cpu = cpu_of(rq);
+	cpu = cpu_of(rq); // rq->cpu
 
-	if (cpu == smp_processor_id()) {
-		set_tsk_need_resched(curr);
-		set_preempt_need_resched();
+	if (cpu == smp_processor_id()) { // 런큐 cpu가 현재 코드를 수행하는 cpu일 경우
+		set_tsk_need_resched(curr); // TIF_NEED_RESCHED 플래그를 설정
+		set_preempt_need_resched(); // reschedule
 		return;
 	}
 
-	if (set_nr_and_not_polling(curr))
-		smp_send_reschedule(cpu);
-	else
-		trace_sched_wake_idle_without_ipi(cpu);
+	if (set_nr_and_not_polling(curr)) // TIF_NEED_RESCHED 플래그를 current task에 설정 
+		smp_send_reschedule(cpu); // remote cpu에 스케줄링 인터럽트에 해당하는 메시지 IPI_RESCHEDULE을 전송
+	else // 플래그 설정에 실패한 경우
+		trace_sched_wake_idle_without_ipi(cpu); // trace 코드 실행
 }
 
 void resched_cpu(int cpu)
@@ -1920,19 +1923,19 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 * reordered with p->state check below. This pairs with mb() in
 	 * set_current_state() the waiting thread does.
 	 */
-	smp_mb__before_spinlock();
-	raw_spin_lock_irqsave(&p->pi_lock, flags);
-	if (!(p->state & state))
+	smp_mb__before_spinlock(); // barrier
+	raw_spin_lock_irqsave(&p->pi_lock, f lags); // irq save
+	if (!(p->state & state)) // Task를 깨우기 위한 조건이 맞는지 확인
 		goto out;
 
 	trace_sched_waking(p);
 
-	success = 1; /* we're going to change ->state */
+	success = 1; /* we're going to change ->state */ // 리턴 값은 true로 시작
 	cpu = task_cpu(p);
 
-	if (p->on_rq && ttwu_remote(p, wake_flags))
-		goto stat;
-
+	if (p->on_rq && ttwu_remote(p, wake_flags)) // rq 에 enqueue 상태이면 light wakeup 진행, TODO 6-14)
+		goto stat; // wake up 성공한 경우
+#define CONFIG_SMP // 임시 코드
 #ifdef CONFIG_SMP
 	/*
 	 * Ensure we load p->on_cpu _after_ p->on_rq, otherwise it would be
@@ -1951,7 +1954,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 * from the consecutive calls to schedule(); the first switching to our
 	 * task, the second putting it to sleep.
 	 */
-	smp_rmb();
+	smp_rmb(); // barrier
 
 	/*
 	 * If the owning (remote) cpu is still in the middle of schedule() with
@@ -1962,27 +1965,28 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 * This ensures that tasks getting woken will be fully ordered against
 	 * their previous state and preserve Program Order.
 	 */
-	smp_cond_acquire(!p->on_cpu);
+	smp_cond_acquire(!p->on_cpu); // barrier
 
-	p->sched_contributes_to_load = !!task_contributes_to_load(p);
-	p->state = TASK_WAKING;
+	p->sched_contributes_to_load = !!task_contributes_to_load(p); // wakup할 task가 rq 로드에 기여하고 있는지 확인하고 sched_contributes_to_load에 입력
+	p->state = TASK_WAKING; // state를 깨운다.
 
 	if (p->sched_class->task_waking)
-		p->sched_class->task_waking(p);
+		p->sched_class->task_waking(p); // 스케줄링 클래스 별로 task_waking 함수 실행
 
-	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags);
-	if (task_cpu(p) != cpu) {
-		wake_flags |= WF_MIGRATED;
-		set_task_cpu(p, cpu);
+	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags); // task가 실행될 cpu를 선택
+	if (task_cpu(p) != cpu) { // 현재 cpu와 다른 cpu가 선택된 경우
+		wake_flags |= WF_MIGRATED; // 마이그레이션 플래그 설정
+		set_task_cpu(p, cpu); // 선택된 cpu에서 실행될 수 있도록 설정
 	}
 #endif /* CONFIG_SMP */
+#undef CONFIG_SMP
 
-	ttwu_queue(p, cpu);
+	ttwu_queue(p, cpu); // TODO 6-15) remote wakeup 실행
 stat:
 	if (schedstat_enabled())
 		ttwu_stat(p, cpu, wake_flags);
 out:
-	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+	raw_spin_unlock_irqrestore(&p->pi_lock, flags); // irq restore
 
 	return success;
 }
@@ -2616,7 +2620,7 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 		      current->comm, current->pid, preempt_count()))
 		preempt_count_set(FORK_PREEMPT_COUNT);
 
-	rq->prev_mm = NULL;
+	rq->prev_mm = NULL; // prev_mm 값 제거
 
 	/*
 	 * A task struct has one reference for the use as "current".
@@ -2630,28 +2634,28 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 	 * transition, resulting in a double drop.
 	 */
 	prev_state = prev->state;
-	vtime_task_switch(prev);
+	vtime_task_switch(prev); // vtime 계산
 	perf_event_task_sched_in(prev, current);
-	finish_lock_switch(rq, prev);
+	finish_lock_switch(rq, prev); // lock 상태일 경우 unlock
 	finish_arch_post_lock_switch();
 
 	fire_sched_in_preempt_notifiers(current);
-	if (mm)
-		mmdrop(mm);
-	if (unlikely(prev_state == TASK_DEAD)) {
+	if (mm) // prev->mm 이 있는 경우 (유저 태스크 케이스)
+		mmdrop(mm); // mm 할당 해제
+	if (unlikely(prev_state == TASK_DEAD)) { // prev task state가 종료중인 경우
 		if (prev->sched_class->task_dead)
-			prev->sched_class->task_dead(prev);
+			prev->sched_class->task_dead(prev); // 스케줄링 클래스 별 task_dead 함수 실행
 
 		/*
 		 * Remove function-return probe instances associated with this
 		 * task and put them back on the free list.
 		 */
 		kprobe_flush_task(prev);
-		put_task_struct(prev);
+		put_task_struct(prev); // task struct 참조 카운터 감소, 카운터가 0인 경우 할당 해제
 	}
 
-	tick_nohz_task_switch();
-	return rq;
+	tick_nohz_task_switch(); 
+	return rq; // run queue 리턴
 }
 
 #ifdef CONFIG_SMP
@@ -2724,12 +2728,15 @@ static __always_inline struct rq *
 context_switch(struct rq *rq, struct task_struct *prev,
 	       struct task_struct *next)
 {
+	/**
+	 * @brief context switch 함수
+	 */
 	struct mm_struct *mm, *oldmm;
 
-	prepare_task_switch(rq, prev, next);
+	prepare_task_switch(rq, prev, next); // task switching 전 준비 작업 진행
 
 	mm = next->mm;
-	oldmm = prev->active_mm;
+	oldmm = prev->active_mm; // 참조하는 mm_struct 값 입력
 	/*
 	 * For paravirt, this is coupled with an exit in switch_to to
 	 * combine the page table reload and the switch backend into
@@ -2737,15 +2744,15 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	 */
 	arch_start_context_switch(prev);
 
-	if (!mm) {
-		next->active_mm = oldmm;
-		atomic_inc(&oldmm->mm_count);
+	if (!mm) { // next task 가 자신의 mm을 가지고 있지 않은 경우 (커널 스레드)
+		next->active_mm = oldmm; // 이전 task의 mm을 빌려 사용
+		atomic_inc(&oldmm->mm_count); // 이전 task의 mm 참조 카운트 증가
 		enter_lazy_tlb(oldmm, next);
 	} else
-		switch_mm(oldmm, mm, next);
+		switch_mm(oldmm, mm, next); // TODO 6-9) next 태스크의 페이지 테이블 물리 주소를 TTRB0 레지스터에 설정
 
-	if (!prev->mm) {
-		prev->active_mm = NULL;
+	if (!prev->mm) { // 이전 task가 mm을 가지고 있지 않은 경우
+		prev->active_mm = NULL; // 참조하는 mm_struct 구조체를 지움
 		rq->prev_mm = oldmm;
 	}
 	/*
@@ -2754,14 +2761,14 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	 * of the scheduler it's an obvious special-case), so we
 	 * do an early lockdep release here:
 	 */
-	lockdep_unpin_lock(&rq->lock);
-	spin_release(&rq->lock.dep_map, 1, _THIS_IP_);
+	lockdep_unpin_lock(&rq->lock); // unlock
+	spin_release(&rq->lock.dep_map, 1, _THIS_IP_); // spin unlock
 
 	/* Here we just switch the register state and the stack. */
-	switch_to(prev, next, prev);
-	barrier();
+	switch_to(prev, next, prev); // cpu 레지스터 정보와 커널 스택을 스위칭
+	barrier(); // barrier
 
-	return finish_task_switch(prev);
+	return finish_task_switch(prev); // 마무리 작업 후 리턴
 }
 
 /*
@@ -3158,9 +3165,9 @@ static void __sched notrace __schedule(bool preempt)
 	struct rq *rq;
 	int cpu;
 
-	cpu = smp_processor_id();
-	rq = cpu_rq(cpu);
-	prev = rq->curr;
+	cpu = smp_processor_id(); // cpu_id
+	rq = cpu_rq(cpu); // run queue
+	prev = rq->curr; // run queue 에서 current task를 가져옴
 
 	/*
 	 * do_exit() calls schedule() with preemption disabled as an exception;
@@ -3170,15 +3177,15 @@ static void __sched notrace __schedule(bool preempt)
 	 * It also avoids the below schedule_debug() test from complaining
 	 * about this.
 	 */
-	if (unlikely(prev->state == TASK_DEAD))
-		preempt_enable_no_resched_notrace();
+	if (unlikely(prev->state == TASK_DEAD)) // TASK가 종료 처리 중인 경우
+		preempt_enable_no_resched_notrace(); // 선점 카운트 감소
 
 	schedule_debug(prev);
 
 	if (sched_feat(HRTICK))
 		hrtick_clear(rq);
 
-	local_irq_disable();
+	local_irq_disable(); // IRQ Disable
 	rcu_note_context_switch();
 
 	/*
@@ -3186,54 +3193,54 @@ static void __sched notrace __schedule(bool preempt)
 	 * can't be reordered with __set_current_state(TASK_INTERRUPTIBLE)
 	 * done by the caller to avoid the race with signal_wake_up().
 	 */
-	smp_mb__before_spinlock();
-	raw_spin_lock(&rq->lock);
-	lockdep_pin_lock(&rq->lock);
+	smp_mb__before_spinlock(); // barrier
+	raw_spin_lock(&rq->lock); // run queue spinlock
+	lockdep_pin_lock(&rq->lock); 
 
 	rq->clock_skip_update <<= 1; /* promote REQ to ACT */
 
 	switch_count = &prev->nivcsw;
-	if (!preempt && prev->state) {
-		if (unlikely(signal_pending_state(prev->state, prev))) {
-			prev->state = TASK_RUNNING;
+	if (!preempt && prev->state) { // 선점 상태가 아니면서 TASK_RUNNING이 아닌 상태
+		if (unlikely(signal_pending_state(prev->state, prev))) { // pending 상태의 시그널이 있는지 확인 후 처리
+			prev->state = TASK_RUNNING; // TASK_RUNNING 으로 변경
 		} else {
-			deactivate_task(rq, prev, DEQUEUE_SLEEP);
-			prev->on_rq = 0;
+			deactivate_task(rq, prev, DEQUEUE_SLEEP); // 런큐에서 task 제거
+			prev->on_rq = 0; // red-black tree에서 제거되었음
 
 			/*
 			 * If a worker went to sleep, notify and ask workqueue
 			 * whether it wants to wake up a task to maintain
 			 * concurrency.
 			 */
-			if (prev->flags & PF_WQ_WORKER) {
+			if (prev->flags & PF_WQ_WORKER) { // PF_WQ_WORKER Flag가 있는 경우
 				struct task_struct *to_wakeup;
 
-				to_wakeup = wq_worker_sleeping(prev);
+				to_wakeup = wq_worker_sleeping(prev); // work queue sleeping
 				if (to_wakeup)
-					try_to_wake_up_local(to_wakeup);
+					try_to_wake_up_local(to_wakeup); // wake up
 			}
 		}
-		switch_count = &prev->nvcsw;
+		switch_count = &prev->nvcsw; // switch_count 업데이트
 	}
 
-	if (task_on_rq_queued(prev))
-		update_rq_clock(rq);
+	if (task_on_rq_queued(prev)) // 스케줄링 엔티티가 red-black tree에 enqueue 되어 있을 경우
+		update_rq_clock(rq); // run_queue의 clock 값을 업데이트
 
-	next = pick_next_task(rq, prev);
-	clear_tsk_need_resched(prev);
-	clear_preempt_need_resched();
+	next = pick_next_task(rq, prev); // TODO 6-28) next task를 CFS 런큐에서 찾는다.
+	clear_tsk_need_resched(prev); // prev 의 TIF_NEED_RESCHED flag를 제거
+	clear_preempt_need_resched(); // 선점 해제
 	rq->clock_skip_update = 0;
 
-	if (likely(prev != next)) {
-		rq->nr_switches++;
-		rq->curr = next;
-		++*switch_count;
+	if (likely(prev != next)) { // 다음 task가 현재 task와 다른 task일 경우
+		rq->nr_switches++; // context_switch count 증가
+		rq->curr = next; // runqueue task_struct 업데이트
+		++*switch_count; // switch_count 증가
 
 		trace_sched_switch(preempt, prev, next);
-		rq = context_switch(rq, prev, next); /* unlocks the rq */
-	} else {
+		rq = context_switch(rq, prev, next); /* unlocks the rq */ // TODO 6-8) context switch 진행
+	} else { // 다음 task가 현재와 동일한 task일 경우
 		lockdep_unpin_lock(&rq->lock);
-		raw_spin_unlock_irq(&rq->lock);
+		raw_spin_unlock_irq(&rq->lock); // irq unlock
 	}
 
 	balance_callback(rq);

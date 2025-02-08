@@ -3093,6 +3093,9 @@ static inline void current_clr_polling(void)
 
 static __always_inline bool need_resched(void)
 {
+	/**
+	 * @brief TIF_NEED_RESCHED 플래그가 설정되었는지 확인
+	 */
 	return unlikely(tif_need_resched());
 }
 

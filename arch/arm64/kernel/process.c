@@ -329,9 +329,12 @@ static void uao_thread_switch(struct task_struct *next)
 struct task_struct *__switch_to(struct task_struct *prev,
 				struct task_struct *next)
 {
+	/**
+	 * @brief Task의 레지스터 정보, 커널 스택을 스위칭한다.
+	 */
 	struct task_struct *last;
 
-	fpsimd_thread_switch(next);
+	fpsimd_thread_switch(next); // 부동소수점 연산 상태 스위칭
 	tls_thread_switch(next);
 	hw_breakpoint_thread_switch(next);
 	contextidr_thread_switch(next);
@@ -341,12 +344,12 @@ struct task_struct *__switch_to(struct task_struct *prev,
 	 * Complete any pending TLB or cache maintenance on this CPU in case
 	 * the thread migrates to a different CPU.
 	 */
-	dsb(ish);
+	dsb(ish); // memory barrier, 캐시 동기화 진행
 
 	/* the actual thread switch */
-	last = cpu_switch_to(prev, next);
+	last = cpu_switch_to(prev, next); // TODO 6-11)
 
-	return last;
+	return last; // prev task_struct 구조체를 리턴한다.
 }
 
 unsigned long get_wchan(struct task_struct *p)

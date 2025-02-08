@@ -627,29 +627,29 @@ ENDPROC(el0_irq)
  * Previous and next are guaranteed not to be the same.
  *
  */
-ENTRY(cpu_switch_to)
-	mov	x10, #THREAD_CPU_CONTEXT
-	add	x8, x0, x10
-	mov	x9, sp
-	stp	x19, x20, [x8], #16		// store callee-saved registers
-	stp	x21, x22, [x8], #16
-	stp	x23, x24, [x8], #16
-	stp	x25, x26, [x8], #16
-	stp	x27, x28, [x8], #16
-	stp	x29, x9, [x8], #16
-	str	lr, [x8]
-	add	x8, x1, x10
-	ldp	x19, x20, [x8], #16		// restore callee-saved registers
-	ldp	x21, x22, [x8], #16
-	ldp	x23, x24, [x8], #16
-	ldp	x25, x26, [x8], #16
-	ldp	x27, x28, [x8], #16
-	ldp	x29, x9, [x8], #16
-	ldr	lr, [x8]
-	mov	sp, x9
-	and	x9, x9, #~(THREAD_SIZE - 1)
-	msr	sp_el0, x9
-	ret
+ENTRY(cpu_switch_to) // 현재 cpu 레지스터를 prev.cpu_context에 저장하고 next.cpu_context에 저장된 값을 레지스터에 저장
+	mov	x10, #THREAD_CPU_CONTEXT // x10 = #THREAD_CPU_CONTEXT
+	add	x8, x0, x10 // x8 = x0 + x10 (x8 = prev.cpu_context)
+	mov	x9, sp // x9 = stack pointer
+	stp	x19, x20, [x8], #16		// store callee-saved registers // x8 = x19, x8 + 8 = x20,  x8 += 16
+	stp	x21, x22, [x8], #16 // x8 = x21, x8 + 8 = x22, x8 += 16
+	stp	x23, x24, [x8], #16 // x8 = x23, x8 + 8 = x24, x8 += 16
+	stp	x25, x26, [x8], #16 // x8 = x25, x8 + 8 = x26, x8 += 16
+	stp	x27, x28, [x8], #16 // x8 = x27, x8 + 8 = x28, x8 += 16
+	stp	x29, x9, [x8], #16 // x8 = x29, x8 + 8 = x9, x8 += 16
+	str	lr, [x8] // x8 = lr
+	add	x8, x1, x10 // x8 = x1 + x10 (next.cpu_context)
+	ldp	x19, x20, [x8], #16		// restore callee-saved registers // x19 = x8, x20 = x8 + 8, x8 += 16
+	ldp	x21, x22, [x8], #16 // x21 = x8, x22 = x8 + 8, x8 += 16
+	ldp	x23, x24, [x8], #16 // x23 = x8, x24 = x8 + 8, x8 += 16
+	ldp	x25, x26, [x8], #16 // x25 = x8, x26 = x8 + 8, x8 += 16
+	ldp	x27, x28, [x8], #16 // x27 = x8, x28 = x8 + 8, x8 += 16
+	ldp	x29, x9, [x8], #16 // x29 = x8, x9 = x8 + 8, x8 += 16
+	ldr	lr, [x8] // lr = x8, 실행 정보를 레지스터에 복구
+	mov	sp, x9 // stack pointer = x9
+	and	x9, x9, #~(THREAD_SIZE - 1) // x9 = x9 & ~(THREAD_SIZE-1)
+	msr	sp_el0, x9 // sp_el0 = x9, sp_el0가 thread_info 구조체의 시작 주소를 가리키도록 설정
+	ret // return
 ENDPROC(cpu_switch_to)
 
 /*
@@ -674,28 +674,28 @@ ret_fast_syscall_trace:
  * Ok, we need to do extra processing, enter the slow path.
  */
 work_pending:
-	tbnz	x1, #TIF_NEED_RESCHED, work_resched
+	tbnz	x1, #TIF_NEED_RESCHED, work_resched // if(x1 & #TIF_NEED_RESCHED != 0) goto work_resched, TIF_NEED_RESCHED 플래그가 설정된 경우 work_resched 실행
 	/* TIF_SIGPENDING, TIF_NOTIFY_RESUME or TIF_FOREIGN_FPSTATE case */
-	mov	x0, sp				// 'regs'
+	mov	x0, sp				// 'regs' // x0 = sp
 	enable_irq				// enable interrupts for do_notify_resume()
-	bl	do_notify_resume
-	b	ret_to_user
+	bl	do_notify_resume	// do_notify_resume()
+	b	ret_to_user			// go to ret_to_user(), current 태스크에 스케줄링 요청이 없다면 원래 작업으로 돌아가기 위해 레이블 점프
 work_resched:
 #ifdef CONFIG_TRACE_IRQFLAGS
 	bl	trace_hardirqs_off		// the IRQs are off here, inform the tracing code
 #endif
-	bl	schedule
+	bl	schedule // 스케줄링 시도
 
 /*
  * "slow" syscall return path.
  */
 ret_to_user:
 	disable_irq				// disable interrupts
-	ldr	x1, [tsk, #TI_FLAGS]
-	and	x2, x1, #_TIF_WORK_MASK
-	cbnz	x2, work_pending
-	enable_step_tsk x1, x2
-	kernel_exit 0
+	ldr	x1, [tsk, #TI_FLAGS] // x1 = tsk & #TI_FLAGS
+	and	x2, x1, #_TIF_WORK_MASK // x2 = x1 & #_TIF_WORK_MASK // TIF_WORK_MASK 값만 추출
+	cbnz	x2, work_pending // if(x2 == 0) goto work_pending // TIF_WORK_MASK FLAG가 설정된 경우 work_pending 으로 복귀
+	enable_step_tsk x1, x2 // enable_step_tsk(x1, x2)
+	kernel_exit 0 // kernel_exit(0)
 ENDPROC(ret_to_user)
 
 /*

@@ -183,21 +183,24 @@ static inline void
 switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	  struct task_struct *tsk)
 {
-	unsigned int cpu = smp_processor_id();
+	/**
+	 * @brief 두 태스크의 주소 공간을 스위칭
+	 */
+	unsigned int cpu = smp_processor_id(); // cpu id를 가져옴
 
-	if (prev == next)
+	if (prev == next) // 이전 mm_struct와 다음 mm_struct가 동일한 경우 pass
 		return;
 
 	/*
 	 * init_mm.pgd does not contain any user mappings and it is always
 	 * active for kernel addresses in TTBR1. Just set the reserved TTBR0.
 	 */
-	if (next == &init_mm) {
-		cpu_set_reserved_ttbr0();
+	if (next == &init_mm) { // 다음 mm_struct가 가 init_mm인 경우
+		cpu_set_reserved_ttbr0(); // TTBR0 를 zero page 에 위치시킴
 		return;
 	}
 
-	check_and_switch_context(next, cpu);
+	check_and_switch_context(next, cpu); // next 태스크의 asid를 구해서 active_asids에 설정, TTBR0 레지스터에 next 태스크의 페이지 테이블 물리 주소를 설정
 }
 
 #define deactivate_mm(tsk,mm)	do { } while (0)

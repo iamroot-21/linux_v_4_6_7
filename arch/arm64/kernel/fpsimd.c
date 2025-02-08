@@ -132,10 +132,10 @@ void fpsimd_thread_switch(struct task_struct *next)
 	 * the registers is in fact the most recent userland FPSIMD state of
 	 * 'current'.
 	 */
-	if (current->mm && !test_thread_flag(TIF_FOREIGN_FPSTATE))
-		fpsimd_save_state(&current->thread.fpsimd_state);
+	if (current->mm && !test_thread_flag(TIF_FOREIGN_FPSTATE)) // mm을 소유하고 있으면서 (유저 Task 이면서), TIF_FOREIGN_FPSTATE 플래그가 없는 경우0
+		fpsimd_save_state(&current->thread.fpsimd_state); // 현재 task의 fpsimd_state를 저장
 
-	if (next->mm) {
+	if (next->mm) { // next task 가 mm이 있는 경우 (kernel task 가 아닌 경우)
 		/*
 		 * If we are switching to a task whose most recent userland
 		 * FPSIMD state is already in the registers of *this* cpu,
@@ -143,14 +143,14 @@ void fpsimd_thread_switch(struct task_struct *next)
 		 * the TIF_FOREIGN_FPSTATE flag so the state will be loaded
 		 * upon the next return to userland.
 		 */
-		struct fpsimd_state *st = &next->thread.fpsimd_state;
+		struct fpsimd_state *st = &next->thread.fpsimd_state; // next의 fpsimd_state를 가져옴
 
-		if (__this_cpu_read(fpsimd_last_state) == st
-		    && st->cpu == smp_processor_id())
-			clear_ti_thread_flag(task_thread_info(next),
+		if (__this_cpu_read(fpsimd_last_state) == st // 현재 fpsimd와 동일한지 확인
+		    && st->cpu == smp_processor_id()) // 동 cpu인지 확인
+			clear_ti_thread_flag(task_thread_info(next), // TIF_FOREIGN_FPSTATE 플래그 초기화
 					     TIF_FOREIGN_FPSTATE);
 		else
-			set_ti_thread_flag(task_thread_info(next),
+			set_ti_thread_flag(task_thread_info(next), // TIF_FOREIGN_FPSTATE 플래그 설정
 					   TIF_FOREIGN_FPSTATE);
 	}
 }

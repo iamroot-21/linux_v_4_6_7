@@ -191,10 +191,13 @@ set_asid:
 
 void check_and_switch_context(struct mm_struct *mm, unsigned int cpu)
 {
+	/**
+	 * @brief asid 설정, ttrb0 레지스터 설정 (switch_mm)
+	 */
 	unsigned long flags;
 	u64 asid;
 
-	asid = atomic64_read(&mm->context.id);
+	asid = atomic64_read(&mm->context.id); // Address Space ID를 가져옴
 
 	/*
 	 * The memory ordering here is subtle. We rely on the control
@@ -203,26 +206,26 @@ void check_and_switch_context(struct mm_struct *mm, unsigned int cpu)
 	 * parallel rollover (i.e. this pairs with the smp_wmb() in
 	 * flush_context).
 	 */
-	if (!((asid ^ atomic64_read(&asid_generation)) >> asid_bits)
+	if (!((asid ^ atomic64_read(&asid_generation)) >> asid_bits) // asid bits가 같은 generation인 경우
 	    && atomic64_xchg_relaxed(&per_cpu(active_asids, cpu), asid))
-		goto switch_mm_fastpath;
+		goto switch_mm_fastpath; // switch_mm 진행
 
-	raw_spin_lock_irqsave(&cpu_asid_lock, flags);
+	raw_spin_lock_irqsave(&cpu_asid_lock, flags); // irq save
 	/* Check that our ASID belongs to the current generation. */
-	asid = atomic64_read(&mm->context.id);
-	if ((asid ^ atomic64_read(&asid_generation)) >> asid_bits) {
-		asid = new_context(mm, cpu);
-		atomic64_set(&mm->context.id, asid);
+	asid = atomic64_read(&mm->context.id); // asid를 읽어옴
+	if ((asid ^ atomic64_read(&asid_generation)) >> asid_bits) { // asid bits 가 current generation이 아닌 경우
+		asid = new_context(mm, cpu); // new_context로 처리
+		atomic64_set(&mm->context.id, asid); // mm에 asid 업데이트 
 	}
 
 	if (cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending))
 		local_flush_tlb_all();
 
-	atomic64_set(&per_cpu(active_asids, cpu), asid);
-	raw_spin_unlock_irqrestore(&cpu_asid_lock, flags);
+	atomic64_set(&per_cpu(active_asids, cpu), asid); // asid 업데이트
+	raw_spin_unlock_irqrestore(&cpu_asid_lock, flags); // spin unlock
 
 switch_mm_fastpath:
-	cpu_switch_mm(mm->pgd, mm);
+	cpu_switch_mm(mm->pgd, mm); // ttbr, asid 업데이트
 }
 
 static int asids_init(void)
