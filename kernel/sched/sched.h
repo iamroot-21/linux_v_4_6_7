@@ -982,16 +982,16 @@ static inline struct task_group *task_group(struct task_struct *p)
 
 static inline void __set_task_cpu(struct task_struct *p, unsigned int cpu)
 {
-	set_task_rq(p, cpu);
+	set_task_rq(p, cpu); // enqueue될 cfs 런큐와 부모 엔티티를 설정
 #ifdef CONFIG_SMP
 	/*
 	 * After ->cpu is set up to a new value, task_rq_lock(p, ...) can be
 	 * successfuly executed on another CPU. We must ensure that updates of
 	 * per-task data have been completed by this moment.
 	 */
-	smp_wmb();
-	task_thread_info(p)->cpu = cpu;
-	p->wake_cpu = cpu;
+	smp_wmb(); // barrier
+	task_thread_info(p)->cpu = cpu; // thread_info 구조체의 cpuid 변경
+	p->wake_cpu = cpu; // task의 wake_cpu 값 변경
 #endif
 }
 
@@ -1454,20 +1454,25 @@ static inline void sched_avg_update(struct rq *rq) { }
 static inline struct rq *__task_rq_lock(struct task_struct *p)
 	__acquires(rq->lock)
 {
+	/**
+	 * @brief runqueue 락을 걸고 리턴
+	 * @param p light wakeup할 task
+	 * @return runqueue
+	 */
 	struct rq *rq;
 
 	lockdep_assert_held(&p->pi_lock);
 
 	for (;;) {
-		rq = task_rq(p);
-		raw_spin_lock(&rq->lock);
-		if (likely(rq == task_rq(p) && !task_on_rq_migrating(p))) {
+		rq = task_rq(p); // task가 속한 runqueue를 가져옴
+		raw_spin_lock(&rq->lock); // run queue spinlock
+		if (likely(rq == task_rq(p) && !task_on_rq_migrating(p))) { // runqueue validation check, migrating 중이 아닌 경우
 			lockdep_pin_lock(&rq->lock);
-			return rq;
+			return rq; // 가져온 런큐를 리턴
 		}
 		raw_spin_unlock(&rq->lock);
 
-		while (unlikely(task_on_rq_migrating(p)))
+		while (unlikely(task_on_rq_migrating(p))) // migrating 중인 경우, 끝날 때 까지 대기
 			cpu_relax();
 	}
 }
@@ -1516,6 +1521,9 @@ static inline struct rq *task_rq_lock(struct task_struct *p, unsigned long *flag
 static inline void __task_rq_unlock(struct rq *rq)
 	__releases(rq->lock)
 {
+	/**
+	 * @brief runqueue unlock
+	 */
 	lockdep_unpin_lock(&rq->lock);
 	raw_spin_unlock(&rq->lock);
 }

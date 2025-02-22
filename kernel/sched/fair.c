@@ -2417,11 +2417,16 @@ static inline void account_numa_dequeue(struct rq *rq, struct task_struct *p)
 static void
 account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-	update_load_add(&cfs_rq->load, se->load.weight);
-	if (!parent_entity(se))
-		update_load_add(&rq_of(cfs_rq)->load, se->load.weight);
+	/**
+	 * @brief enqueue할 entity의 load weight 를 cfs_rq에 추가
+	 */
+	update_load_add(&cfs_rq->load, se->load.weight); // cfs_rq->load += se->load.weight
+	if (!parent_entity(se)) // parent entity 가 없을 경우
+		update_load_add(&rq_of(cfs_rq)->load, se->load.weight); // rq->load += se->load.weight
+#define CONFIG_SMP // 임시 선언
 #ifdef CONFIG_SMP
-	if (entity_is_task(se)) {
+#undef CONFIG_SMP // 임시 선언
+	if (entity_is_task(se)) { // entity가 task인 경우
 		struct rq *rq = rq_of(cfs_rq);
 
 		account_numa_enqueue(rq, task_of(se));
@@ -3130,7 +3135,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 	/**
 	 * @brief 태스크를 표현하는 엔티티의 vruntime을 조정한다.
 	 */
-	u64 vruntime = cfs_rq->min_vruntime;
+	u64 vruntime = cfs_rq->min_vruntime; // min_runtime을 기준으로 계산 시작
 
 	/*
 	 * The 'current' period is already promised to the current tasks,
@@ -3138,11 +3143,11 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 	 * little, place the new task so that it fits in the slot that
 	 * stays open at the end.
 	 */
-	if (initial && sched_feat(START_DEBIT))
-		vruntime += sched_vslice(cfs_rq, se);
+	if (initial && sched_feat(START_DEBIT)) // enqueue 되기 전인 entity (initial), 스케줄러가 START_DEBIT을 지원
+		vruntime += sched_vslice(cfs_rq, se); // load weight가 반영된 time slice 값만큼 증가
 
 	/* sleeps up to a single latency don't count. */
-	if (!initial) {
+	if (!initial) { // 처음 enqueue가 아닌 경우
 		unsigned long thresh = sysctl_sched_latency;
 
 		/*
@@ -3152,11 +3157,11 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		if (sched_feat(GENTLE_FAIR_SLEEPERS))
 			thresh >>= 1;
 
-		vruntime -= thresh;
+		vruntime -= thresh; // sysctl_sched_latency >> 1 만큼 감소시킴
 	}
 
 	/* ensure we never gain time by being placed backwards. */
-	se->vruntime = max_vruntime(se->vruntime, vruntime);
+	se->vruntime = max_vruntime(se->vruntime, vruntime); // 조정된 값과 sched entity의 vruntime 중 큰 값을 사용
 }
 
 static void check_enqueue_throttle(struct cfs_rq *cfs_rq);
@@ -3184,6 +3189,9 @@ static inline void check_schedstat_required(void)
 static void
 enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
+	/**
+	 * @brief vruntime을 갱신하고 tree에 enqueue
+	 */
 	bool renorm = !(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_WAKING);
 	bool curr = cfs_rq->curr == se;
 
@@ -3191,24 +3199,24 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 * If we're the current task, we must renormalise before calling
 	 * update_curr().
 	 */
-	if (renorm && curr)
-		se->vruntime += cfs_rq->min_vruntime;
+	if (renorm && curr) // flag가 (!WAKE || WAKING), 현재 cfs_rq에서 current entity인 경우
+		se->vruntime += cfs_rq->min_vruntime; // vruntime 업데이트
 
-	update_curr(cfs_rq);
+	update_curr(cfs_rq); // enqueue 이전에 current 엔티티, cfs 런큐의 필드 업데이트
 
 	/*
 	 * Otherwise, renormalise after, such that we're placed at the current
 	 * moment in time, instead of some random moment in the past.
 	 */
-	if (renorm && !curr)
-		se->vruntime += cfs_rq->min_vruntime;
+	if (renorm && !curr) // flag가 (!WAKE || WAKING), current entity가 아닌 경우
+		se->vruntime += cfs_rq->min_vruntime; // vruntime 업데이트
 
 	enqueue_entity_load_avg(cfs_rq, se);
-	account_entity_enqueue(cfs_rq, se);
-	update_cfs_shares(cfs_rq);
+	account_entity_enqueue(cfs_rq, se); // enqueue할 entity의 load weight를 cfs_rq에 추가
+	update_cfs_shares(cfs_rq); // load weight 갱신
 
-	if (flags & ENQUEUE_WAKEUP) {
-		place_entity(cfs_rq, se, 0);
+	if (flags & ENQUEUE_WAKEUP) { // 잠들었던 entity를 깨우면서 enqueue 하는 경우
+		place_entity(cfs_rq, se, 0); // TODO 6-25) 태스크를 표현하는 엔티티의 vruntime을 조정한다.
 		if (schedstat_enabled())
 			enqueue_sleeper(cfs_rq, se);
 	}
@@ -3218,12 +3226,12 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		update_stats_enqueue(cfs_rq, se);
 		check_spread(cfs_rq, se);
 	}
-	if (!curr)
-		__enqueue_entity(cfs_rq, se);
-	se->on_rq = 1;
+	if (!curr) // current entity가 아닌 경우
+		__enqueue_entity(cfs_rq, se); // TODO 6-26) enqueue 진행
+	se->on_rq = 1; // se가 enqueue 되었음
 
-	if (cfs_rq->nr_running == 1) {
-		list_add_leaf_cfs_rq(cfs_rq);
+	if (cfs_rq->nr_running == 1) { // cfs rq에 enqueue된 entity가 1개인 경우
+		list_add_leaf_cfs_rq(cfs_rq); // leaf CFS 런큐를 관리하는 필드에 cfs 런큐 추가
 		check_enqueue_throttle(cfs_rq);
 	}
 }
@@ -4326,14 +4334,17 @@ static inline void hrtick_update(struct rq *rq)
 static void
 enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
+	/**
+	 * @brief cfs enqueue
+	 */
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 
-	for_each_sched_entity(se) {
-		if (se->on_rq)
+	for_each_sched_entity(se) { // sched entity 순회
+		if (se->on_rq) // enqueue인 경우 패스
 			break;
-		cfs_rq = cfs_rq_of(se);
-		enqueue_entity(cfs_rq, se, flags);
+		cfs_rq = cfs_rq_of(se); // scheduling entity가 enqueue될 cfs 런큐를 가져옴
+		enqueue_entity(cfs_rq, se, flags); // TODO 6-24) vruntime을 갱신하고 트리에 enqueue
 
 		/*
 		 * end evaluation on encountering a throttled cfs_rq
@@ -4341,26 +4352,26 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		 * note: in the case of encountering a throttled cfs_rq we will
 		 * post the final h_nr_running increment below.
 		*/
-		if (cfs_rq_throttled(cfs_rq))
+		if (cfs_rq_throttled(cfs_rq)) // throttle check
 			break;
-		cfs_rq->h_nr_running++;
+		cfs_rq->h_nr_running++; // running count 증가
 
 		flags = ENQUEUE_WAKEUP;
 	}
 
-	for_each_sched_entity(se) {
-		cfs_rq = cfs_rq_of(se);
-		cfs_rq->h_nr_running++;
+	for_each_sched_entity(se) { // 앞서 실행했던 se 순회를 종료 지점부터 다시 실행
+		cfs_rq = cfs_rq_of(se); // sched entity의 cfs rq를 가져옴
+		cfs_rq->h_nr_running++; // running 카운트 증가
 
-		if (cfs_rq_throttled(cfs_rq))
+		if (cfs_rq_throttled(cfs_rq)) // throttle check
 			break;
 
-		update_load_avg(se, 1);
-		update_cfs_shares(cfs_rq);
+		update_load_avg(se, 1); // load average 업데이트
+		update_cfs_shares(cfs_rq); // cfs share 비율 계산
 	}
 
 	if (!se)
-		add_nr_running(rq, 1);
+		add_nr_running(rq, 1); // 최상위 엔티티까지 탐색을 마쳤는지 확인, 아닌 경우 nr_running 필드 갱신
 
 	hrtick_update(rq);
 }
@@ -5320,6 +5331,9 @@ wakeup_gran(struct sched_entity *curr, struct sched_entity *se)
 static int
 wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se)
 {
+	/**
+	 * @brief granule 값보다 큰 경우 preemtion 허가, 아닌 경우 불가
+	 */
 	s64 gran, vdiff = curr->vruntime - se->vruntime;
 
 	if (vdiff <= 0)
@@ -5361,14 +5375,17 @@ static void set_skip_buddy(struct sched_entity *se)
  */
 static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 {
-	struct task_struct *curr = rq->curr;
-	struct sched_entity *se = &curr->se, *pse = &p->se;
+	/**
+	 * @brief wakeup한 task가 current task를 선점할 수 있는지 확인
+	 */
+	struct task_struct *curr = rq->curr; // current task
+	struct sched_entity *se = &curr->se, *pse = &p->se; //scheduling entity
 	struct cfs_rq *cfs_rq = task_cfs_rq(curr);
 	int scale = cfs_rq->nr_running >= sched_nr_latency;
 	int next_buddy_marked = 0;
 
-	if (unlikely(se == pse))
-		return;
+	if (unlikely(se == pse)) // run queue의 current task 와 wakeup task가 동일한지 확인
+		return; // 동일한 task인 경우 선점이 불필요함
 
 	/*
 	 * This is possible from callers such as attach_tasks(), in which we
@@ -5379,9 +5396,9 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	if (unlikely(throttled_hierarchy(cfs_rq_of(pse))))
 		return;
 
-	if (sched_feat(NEXT_BUDDY) && scale && !(wake_flags & WF_FORK)) {
-		set_next_buddy(pse);
-		next_buddy_marked = 1;
+	if (sched_feat(NEXT_BUDDY) && scale && !(wake_flags & WF_FORK)) { // wakeup한 task가 next buddy로 설정할 수 있는지 확인
+		set_next_buddy(pse); // task를 next buddy로 설정
+		next_buddy_marked = 1; // next buddy mark on
 	}
 
 	/*
@@ -5394,38 +5411,38 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	 * prevents us from potentially nominating it as a false LAST_BUDDY
 	 * below.
 	 */
-	if (test_tsk_need_resched(curr))
-		return;
+	if (test_tsk_need_resched(curr)) // rescheduling이 요청되어 있는지 확인
+		return; // rescheduling이 이미 요청된 경우 함수 종료
 
 	/* Idle tasks are by definition preempted by non-idle tasks. */
-	if (unlikely(curr->policy == SCHED_IDLE) &&
+	if (unlikely(curr->policy == SCHED_IDLE) && // current task만 SCHED_IDLE 정책을 사용하는 경우
 	    likely(p->policy != SCHED_IDLE))
-		goto preempt;
+		goto preempt; // 선점 진행
 
 	/*
 	 * Batch and idle tasks do not preempt non-idle tasks (their preemption
 	 * is driven by the tick):
 	 */
-	if (unlikely(p->policy != SCHED_NORMAL) || !sched_feat(WAKEUP_PREEMPTION))
+	if (unlikely(p->policy != SCHED_NORMAL) || !sched_feat(WAKEUP_PREEMPTION)) // wakeup preemtion이 가능한지 확인
 		return;
 
 	find_matching_se(&se, &pse);
-	update_curr(cfs_rq_of(se));
+	update_curr(cfs_rq_of(se)); // cfs 런큐 필드 데이터 갱신
 	BUG_ON(!pse);
-	if (wakeup_preempt_entity(se, pse) == 1) {
+	if (wakeup_preempt_entity(se, pse) == 1) { // granule 보다 vruntime 이 클 경우 선점 허용
 		/*
 		 * Bias pick_next to pick the sched entity that is
 		 * triggering this preemption.
 		 */
-		if (!next_buddy_marked)
-			set_next_buddy(pse);
+		if (!next_buddy_marked) // 앞에서 next buddy가 안된 경우
+			set_next_buddy(pse); // next buddy로 설정
 		goto preempt;
 	}
 
 	return;
 
 preempt:
-	resched_curr(rq);
+	resched_curr(rq); // rescheduling 요청
 	/*
 	 * Only set the backward buddy when the current task is still
 	 * on the rq. This can happen when a wakeup gets interleaved
@@ -5435,11 +5452,11 @@ preempt:
 	 * Also, during early boot the idle thread is in the fair class,
 	 * for obvious reasons its a bad idea to schedule back to it.
 	 */
-	if (unlikely(!se->on_rq || curr == rq->idle))
+	if (unlikely(!se->on_rq || curr == rq->idle)) // sched entity가 rq에 없고 current task 가 idle인 경우
 		return;
 
 	if (sched_feat(LAST_BUDDY) && scale && entity_is_task(se))
-		set_last_buddy(se);
+		set_last_buddy(se); // last buddy로 설정
 }
 
 static struct task_struct *

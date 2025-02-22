@@ -77,7 +77,9 @@ EXPORT_SYMBOL_GPL(sched_clock);
 
 __read_mostly int sched_clock_running;
 
+#define CONFIG_HAVE_UNSTABLE_SCHED_CLOCK
 #ifdef CONFIG_HAVE_UNSTABLE_SCHED_CLOCK
+#undef CONFIG_HAVE_UNSTABLE_SCHED_CLOCK
 static struct static_key __sched_clock_stable = STATIC_KEY_INIT;
 static int __sched_clock_stable_early;
 

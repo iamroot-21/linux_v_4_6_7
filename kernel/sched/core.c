@@ -715,10 +715,10 @@ static void set_load_weight(struct task_struct *p)
 
 static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	update_rq_clock(rq);
-	if (!(flags & ENQUEUE_RESTORE))
-		sched_info_queued(rq, p);
-	p->sched_class->enqueue_task(rq, p, flags);
+	update_rq_clock(rq); // runqueue clock 필드 업데이트
+	if (!(flags & ENQUEUE_RESTORE)) // EUQUEUE_RESTORE 플래그가 없는 경우
+		sched_info_queued(rq, p); // task의 last_queued 를 rq clock으로 업데이트
+	p->sched_class->enqueue_task(rq, p, flags); // 해당 task를 enqueue
 }
 
 static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
@@ -731,10 +731,10 @@ static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
-	if (task_contributes_to_load(p))
-		rq->nr_uninterruptible--;
+	if (task_contributes_to_load(p)) // 해당 태스크가 runqueue 로드에 기여 중인지 확인
+		rq->nr_uninterruptible--; // 로드 중이라면 uninterruptible 필드 감소
 
-	enqueue_task(rq, p, flags);
+	enqueue_task(rq, p, flags); // task를 runqueue에 enqueue
 }
 
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
@@ -910,16 +910,19 @@ static inline void check_class_changed(struct rq *rq, struct task_struct *p,
 
 void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 {
+	/**
+	 * @brief task가 선점 가능한지 확인
+	 */
 	const struct sched_class *class;
 
-	if (p->sched_class == rq->curr->sched_class) {
-		rq->curr->sched_class->check_preempt_curr(rq, p, flags);
-	} else {
-		for_each_class(class) {
-			if (class == rq->curr->sched_class)
-				break;
-			if (class == p->sched_class) {
-				resched_curr(rq);
+	if (p->sched_class == rq->curr->sched_class) { // rq와 task가 동일한 scheduling class를 사용중인지 확인
+		rq->curr->sched_class->check_preempt_curr(rq, p, flags); // scheduling class의 선점 체크 함수 실행
+	} else { // rq와 task의 scheduling class가 다른 경우
+		for_each_class(class) { // 우선 순위가 높은 class로 확인
+			if (class == rq->curr->sched_class) // run_queue 의 scheduler가 우선 순위가 높은 경우
+				break; // rescheduling 하지 않음
+			if (class == p->sched_class) { // task의 scheduler가 높은 경우
+				resched_curr(rq); // rescheduling 진행
 				break;
 			}
 		}
@@ -933,7 +936,9 @@ void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 		rq_clock_skip_update(rq, true);
 }
 
+#define CONFIG_SMP // 임시 선언
 #ifdef CONFIG_SMP
+#undef CONFIG_SMP // 임시 선언
 /*
  * This is how migration works:
  *
@@ -1187,14 +1192,14 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 
 	trace_sched_migrate_task(p, new_cpu);
 
-	if (task_cpu(p) != new_cpu) {
-		if (p->sched_class->migrate_task_rq)
-			p->sched_class->migrate_task_rq(p);
-		p->se.nr_migrations++;
-		perf_event_task_migrate(p);
+	if (task_cpu(p) != new_cpu) { // 기존 task가 기존에 실행되었던 cpu와 다음 cpu가 다른지 확인
+		if (p->sched_class->migrate_task_rq) // scheduling class 에 migrate 용 함수가 있는 경우
+			p->sched_class->migrate_task_rq(p); // rq migrate 함수 실행
+		p->se.nr_migrations++; // migration 횟수 증가
+		perf_event_task_migrate(p); // migrate 플래그 설정
 	}
 
-	__set_task_cpu(p, new_cpu);
+	__set_task_cpu(p, new_cpu); // TODO 6-22) 태스크가 스케줄링 될 수 있게 준비
 }
 
 static void __migrate_swap_task(struct task_struct *p, int cpu)
@@ -1599,8 +1604,11 @@ ttwu_stat(struct task_struct *p, int cpu, int wake_flags)
 
 static inline void ttwu_activate(struct rq *rq, struct task_struct *p, int en_flags)
 {
-	activate_task(rq, p, en_flags);
-	p->on_rq = TASK_ON_RQ_QUEUED;
+	/**
+	 * @brief task를 rq에 enqueue
+	 */
+	activate_task(rq, p, en_flags); // task를 enqueue
+	p->on_rq = TASK_ON_RQ_QUEUED; // runqueue에 있는 걸로 변경
 
 	/* if a worker is waking up, notify workqueue */
 	if (p->flags & PF_WQ_WORKER)
@@ -1613,22 +1621,24 @@ static inline void ttwu_activate(struct rq *rq, struct task_struct *p, int en_fl
 static void
 ttwu_do_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 {
-	check_preempt_curr(rq, p, wake_flags);
-	p->state = TASK_RUNNING;
+	check_preempt_curr(rq, p, wake_flags); // TODO 6-19) current task를 선점할 수 있는지 확인
+	p->state = TASK_RUNNING; // task 상태 변경 (TASK_RUNNING)
 	trace_sched_wakeup(p);
 
+#define CONFIG_SMP // 임시 선언
 #ifdef CONFIG_SMP
-	if (p->sched_class->task_woken) {
+#undef CONFIG_SMP
+	if (p->sched_class->task_woken) { // task_woken 포인터가 할당되어 있는 경우
 		/*
 		 * Our task @p is fully woken up and running; so its safe to
 		 * drop the rq->lock, hereafter rq is only used for statistics.
 		 */
 		lockdep_unpin_lock(&rq->lock);
-		p->sched_class->task_woken(rq, p);
+		p->sched_class->task_woken(rq, p); // 함수 task_woken 실행
 		lockdep_pin_lock(&rq->lock);
 	}
 
-	if (rq->idle_stamp) {
+	if (rq->idle_stamp) { // idle_stamp 업데이트 플래그가 있는 경우
 		u64 delta = rq_clock(rq) - rq->idle_stamp;
 		u64 max = 2*rq->max_idle_balance_cost;
 
@@ -1637,7 +1647,7 @@ ttwu_do_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 		if (rq->avg_idle > max)
 			rq->avg_idle = max;
 
-		rq->idle_stamp = 0;
+		rq->idle_stamp = 0; // idle_stamp 플래그 제거
 	}
 #endif
 }
@@ -1648,12 +1658,12 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags)
 	lockdep_assert_held(&rq->lock);
 
 #ifdef CONFIG_SMP
-	if (p->sched_contributes_to_load)
-		rq->nr_uninterruptible--;
+	if (p->sched_contributes_to_load) // 태스크가 런큐의 로드에 기여 중인지 체크
+		rq->nr_uninterruptible--; // 기여 중인 경우 interruptible 필드를 1 감소
 #endif
 
-	ttwu_activate(rq, p, ENQUEUE_WAKEUP | ENQUEUE_WAKING);
-	ttwu_do_wakeup(rq, p, wake_flags);
+	ttwu_activate(rq, p, ENQUEUE_WAKEUP | ENQUEUE_WAKING); // task를 enqueue
+	ttwu_do_wakeup(rq, p, wake_flags); // TODO 6-18 태스크의 실행을 시도
 }
 
 /*
@@ -1667,19 +1677,21 @@ static int ttwu_remote(struct task_struct *p, int wake_flags)
 	struct rq *rq;
 	int ret = 0;
 
-	rq = __task_rq_lock(p);
-	if (task_on_rq_queued(p)) {
+	rq = __task_rq_lock(p); // task가 속한 runqueue lock이후 rq를 가져옴
+	if (task_on_rq_queued(p)) { // task가 enqueue 상태인지 확인
 		/* check_preempt_curr() may use rq clock */
-		update_rq_clock(rq);
-		ttwu_do_wakeup(rq, p, wake_flags);
+		update_rq_clock(rq); // runqueue clock 갱신
+		ttwu_do_wakeup(rq, p, wake_flags); // TODO 6-18) 태스크 실행을 시도
 		ret = 1;
 	}
-	__task_rq_unlock(rq);
+	__task_rq_unlock(rq); // 가져왔던 rq unlock
 
-	return ret;
+	return ret; // 실행 결과 리턴
 }
 
+#define CONFIG_SMP
 #ifdef CONFIG_SMP
+#undef CONFIG_SMP
 void sched_ttwu_pending(void)
 {
 	/**
@@ -1746,13 +1758,16 @@ void scheduler_ipi(void)
 
 static void ttwu_queue_remote(struct task_struct *p, int cpu)
 {
+	/**
+	 * @brief remote cpu에서 실행되도록 설정
+	 */
 	struct rq *rq = cpu_rq(cpu);
 
-	if (llist_add(&p->wake_entry, &cpu_rq(cpu)->wake_list)) {
-		if (!set_nr_if_polling(rq->idle))
-			smp_send_reschedule(cpu);
+	if (llist_add(&p->wake_entry, &cpu_rq(cpu)->wake_list)) {  // task를 rq의 wake_entry에 추가
+		if (!set_nr_if_polling(rq->idle)) // NRFLAG가 설정되지 않은 경우
+			smp_send_reschedule(cpu); // remote cpu에 rescheduling 요구
 		else
-			trace_sched_wake_idle_without_ipi(cpu);
+			trace_sched_wake_idle_without_ipi(cpu); // 디버깅용
 	}
 }
 
@@ -1788,20 +1803,25 @@ bool cpus_share_cache(int this_cpu, int that_cpu)
 
 static void ttwu_queue(struct task_struct *p, int cpu)
 {
-	struct rq *rq = cpu_rq(cpu);
+	/**
+	 * @brief task를 런큐에 enqueue하기
+	 * @param p task
+	 * @param cpu cpu id
+	 */
+	struct rq *rq = cpu_rq(cpu); // run queue를 가져옴
 
 #if defined(CONFIG_SMP)
-	if (sched_feat(TTWU_QUEUE) && !cpus_share_cache(smp_processor_id(), cpu)) {
+	if (sched_feat(TTWU_QUEUE) && !cpus_share_cache(smp_processor_id(), cpu)) { //remote wakeup이 가능한지 확인
 		sched_clock_cpu(cpu); /* sync clocks x-cpu */
-		ttwu_queue_remote(p, cpu);
+		ttwu_queue_remote(p, cpu); // TODO 6-16) remote cpu에서 실행되도록 설정
 		return;
 	}
 #endif
 
-	raw_spin_lock(&rq->lock);
+	raw_spin_lock(&rq->lock); // rq spinlock
 	lockdep_pin_lock(&rq->lock);
-	ttwu_do_activate(rq, p, 0);
-	lockdep_unpin_lock(&rq->lock);
+	ttwu_do_activate(rq, p, 0); // TODO 6-17) 태스크를 실행 가능하도록 만듦
+	lockdep_unpin_lock(&rq->lock); // rq spin unlock
 	raw_spin_unlock(&rq->lock);
 }
 

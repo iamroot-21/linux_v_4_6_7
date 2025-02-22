@@ -38,11 +38,23 @@
 bool llist_add_batch(struct llist_node *new_first, struct llist_node *new_last,
 		     struct llist_head *head)
 {
+	/**
+	 * @brief llist_head 에 값을 추가
+	 */
 	struct llist_node *first;
 
+	// 기존
+	// -----------
+	// | 1 | 2 | 3 |
+	// -----------
 	do {
 		new_last->next = first = ACCESS_ONCE(head->first);
 	} while (cmpxchg(&head->first, first, new_first) != first);
+
+	// 이후
+	// -----------------------------------------
+	// | new first .... | new last  | 1 | 2 | 3 |
+	// -----------------------------------------
 
 	return !first;
 }
