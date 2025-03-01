@@ -3113,24 +3113,24 @@ pick_next_task(struct rq *rq, struct task_struct *prev)
 	 * Optimization: we know that if all tasks are in
 	 * the fair class we can call that function directly:
 	 */
-	if (likely(prev->sched_class == class &&
-		   rq->nr_running == rq->cfs.h_nr_running)) {
-		p = fair_sched_class.pick_next_task(rq, prev);
-		if (unlikely(p == RETRY_TASK))
+	if (likely(prev->sched_class == class && // 전 task 가 fair scheduling 이고
+		   rq->nr_running == rq->cfs.h_nr_running)) { // fair 스케줄링으로 도는 task 만 run queue 에 있는 경우
+		p = fair_sched_class.pick_next_task(rq, prev); // fair 스케줄링으로 도는 task 를 찾겠다.
+		if (unlikely(p == RETRY_TASK)) // fair 스케줄링보다 우선순위가 높은 스케줄링의 task 를 발견시 새로 찾기
 			goto again;
 
 		/* assumes fair_sched_class->next == idle_sched_class */
 		if (unlikely(!p))
-			p = idle_sched_class.pick_next_task(rq, prev);
+			p = idle_sched_class.pick_next_task(rq, prev); // task 가 없는 경우 idle 쓰레드를 선정
 
 		return p;
 	}
 
 again:
-	for_each_class(class) {
-		p = class->pick_next_task(rq, prev);
+	for_each_class(class) { // 우선순위가 높은 스케줄러 클래스부터 top-down 으로 순회
+		p = class->pick_next_task(rq, prev); // 태스크를 발견시 선정
 		if (p) {
-			if (unlikely(p == RETRY_TASK))
+			if (unlikely(p == RETRY_TASK)) // 더 높은 우선위의 스케줄러 태스크를 발견하면 새로 돌겠다.
 				goto again;
 			return p;
 		}

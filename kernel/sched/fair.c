@@ -500,7 +500,7 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		 * We dont care about collisions. Nodes with
 		 * the same key stay together.
 		 */
-		if (entity_before(se, entry)) {
+		if (entity_before(se, entry)) { // se.vruntime < parent.vruntime
 			link = &parent->rb_left;
 		} else {
 			link = &parent->rb_right;
@@ -513,7 +513,7 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	 * used):
 	 */
 	if (leftmost)
-		cfs_rq->rb_leftmost = &se->run_node;
+		cfs_rq->rb_leftmost = &se->run_node; // 신규 추가 노드가 vruntime 가장 작았다면 캐싱
 
 	rb_link_node(&se->run_node, parent, link);
 	rb_insert_color(&se->run_node, &cfs_rq->tasks_timeline);
@@ -3298,7 +3298,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	clear_buddies(cfs_rq, se);
 
 	if (se != cfs_rq->curr)
-		__dequeue_entity(cfs_rq, se);
+		__dequeue_entity(cfs_rq, se); // Rb 트리에서 제거
 	se->on_rq = 0;
 	account_entity_dequeue(cfs_rq, se);
 
@@ -3313,7 +3313,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	/* return excess runtime on last dequeue */
 	return_cfs_rq_runtime(cfs_rq);
 
-	update_min_vruntime(cfs_rq);
+	update_min_vruntime(cfs_rq); // min vruntime 갱신
 	update_cfs_shares(cfs_rq);
 }
 
@@ -3327,10 +3327,10 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	struct sched_entity *se;
 	s64 delta;
 
-	ideal_runtime = sched_slice(cfs_rq, curr);
+	ideal_runtime = sched_slice(cfs_rq, curr); // 6-41
 	delta_exec = curr->sum_exec_runtime - curr->prev_sum_exec_runtime;
 	if (delta_exec > ideal_runtime) {
-		resched_curr(rq_of(cfs_rq));
+		resched_curr(rq_of(cfs_rq)); // 실제로 실행된 시간이, 이상적인 시간보다 커진경우 RESCHED 요청
 		/*
 		 * The current task ran long enough, ensure it doesn't get
 		 * re-elected due to buddy favours.
@@ -3344,16 +3344,16 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	 * narrow margin doesn't have to wait for a full slice.
 	 * This also mitigates buddy induced latencies under load.
 	 */
-	if (delta_exec < sysctl_sched_min_granularity)
+	if (delta_exec < sysctl_sched_min_granularity) // 최소 보장시간동안은 실행 될 수 있도록 보장함
 		return;
 
-	se = __pick_first_entity(cfs_rq);
-	delta = curr->vruntime - se->vruntime;
+	se = __pick_first_entity(cfs_rq); // leftmost 의 entity 를 가져와서
+	delta = curr->vruntime - se->vruntime; // 차이를 계산
 
 	if (delta < 0)
 		return;
 
-	if (delta > ideal_runtime)
+	if (delta > ideal_runtime) // 계산한 값이 ideal_runtime 보다 큰 경우 RESCHED 요청
 		resched_curr(rq_of(cfs_rq));
 }
 
@@ -3369,12 +3369,12 @@ set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		 */
 		if (schedstat_enabled())
 			update_stats_wait_end(cfs_rq, se);
-		__dequeue_entity(cfs_rq, se);
+		__dequeue_entity(cfs_rq, se); // on_rq 상태였다면 레드블랙트리에서 제거
 		update_load_avg(se, 1);
 	}
 
 	update_stats_curr_start(cfs_rq, se);
-	cfs_rq->curr = se;
+	cfs_rq->curr = se; // current 를 entity 로 설정
 #ifdef CONFIG_SCHEDSTATS
 	/*
 	 * Track our maximum slice length, if the CPU's load is at
@@ -3402,14 +3402,14 @@ wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se);
 static struct sched_entity *
 pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 {
-	struct sched_entity *left = __pick_first_entity(cfs_rq);
+	struct sched_entity *left = __pick_first_entity(cfs_rq); // rb tree 에서 leftmost 가져오기
 	struct sched_entity *se;
 
 	/*
 	 * If curr is set we have to see if its left of the leftmost entity
 	 * still in the tree, provided there was anything in the tree at all.
 	 */
-	if (!left || (curr && entity_before(curr, left)))
+	if (!left || (curr && entity_before(curr, left))) // leftmost 가 없거나, curr.vruntime 이 더 작은경우 curr 을 설정
 		left = curr;
 
 	se = left; /* ideally we run the leftmost entity */
@@ -3422,30 +3422,30 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 		struct sched_entity *second;
 
 		if (se == curr) {
-			second = __pick_first_entity(cfs_rq);
+			second = __pick_first_entity(cfs_rq); // se 가 curr 인 경우 이미 dequeue 되어있기 때문에 leftmost 를 다시 획득
 		} else {
-			second = __pick_next_entity(se);
+			second = __pick_next_entity(se); // leftmost 의 옆 노드를 획득
 			if (!second || (curr && entity_before(curr, second)))
-				second = curr;
+				second = curr; // curr 이 vruntime 이 작아서 우선순위가 있는 경우
 		}
 
 		if (second && wakeup_preempt_entity(second, left) < 1)
-			se = second;
+			se = second; // skip 성공 케이스
 	}
 
 	/*
 	 * Prefer last buddy, try to return the CPU to a preempted task.
 	 */
 	if (cfs_rq->last && wakeup_preempt_entity(cfs_rq->last, left) < 1)
-		se = cfs_rq->last;
+		se = cfs_rq->last; // 마지막에 실행했던 se 를 설정
 
 	/*
 	 * Someone really wants this to run. If it's not unfair, run it.
 	 */
 	if (cfs_rq->next && wakeup_preempt_entity(cfs_rq->next, left) < 1)
-		se = cfs_rq->next;
+		se = cfs_rq->next; // next buddy 실행 가능한 경우
 
-	clear_buddies(cfs_rq, se);
+	clear_buddies(cfs_rq, se); // last, next, buddy 에서 se 를 갖고있는 경우 제거
 
 	return se;
 }
@@ -3459,24 +3459,24 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 	 * was not called and update_curr() has to be done:
 	 */
 	if (prev->on_rq)
-		update_curr(cfs_rq);
+		update_curr(cfs_rq); // 아직 on 상태였다면 vruntime 을 갱신
 
 	/* throttle cfs_rqs exceeding runtime */
-	check_cfs_rq_runtime(cfs_rq);
+	check_cfs_rq_runtime(cfs_rq); // throttle 상태 등 검사 및 설정
 
-	if (schedstat_enabled()) {
+	if (schedstat_enabled()) { // 스탯 넣기
 		check_spread(cfs_rq, prev);
 		if (prev->on_rq)
 			update_stats_wait_start(cfs_rq, prev);
 	}
 
-	if (prev->on_rq) {
+	if (prev->on_rq) { // rb 트리에 넣어주기
 		/* Put 'current' back into the tree. */
 		__enqueue_entity(cfs_rq, prev);
 		/* in !on_rq case, update occurred at dequeue */
 		update_load_avg(prev, 0);
 	}
-	cfs_rq->curr = NULL;
+	cfs_rq->curr = NULL; // 현재 task 을 NULL 로 설정
 }
 
 static void
@@ -4387,11 +4387,11 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
-	int task_sleep = flags & DEQUEUE_SLEEP;
+	int task_sleep = flags & DEQUEUE_SLEEP; // TASK RUNNING 이 아닌 상태로 스위칭, throttling 이 걸린경우
 
-	for_each_sched_entity(se) {
+	for_each_sched_entity(se) { // bottom up 으로 sched_entity 순회
 		cfs_rq = cfs_rq_of(se);
-		dequeue_entity(cfs_rq, se, flags);
+		dequeue_entity(cfs_rq, se, flags); // on_rq = 0, rb 트리에서 제거 등등
 
 		/*
 		 * end evaluation on encountering a throttled cfs_rq
@@ -4404,13 +4404,13 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		cfs_rq->h_nr_running--;
 
 		/* Don't dequeue parent if it has other entities besides us */
-		if (cfs_rq->load.weight) {
+		if (cfs_rq->load.weight) { // 같은 그룹에 entity 가 있을때 dequeue 를 멈춤
 			/*
 			 * Bias pick_next to pick a task from this cfs_rq, as
 			 * p is sleeping when it is within its sched_slice.
 			 */
 			if (task_sleep && parent_entity(se))
-				set_next_buddy(parent_entity(se));
+				set_next_buddy(parent_entity(se)); // 같은 그룹의 entity 에 우선순위를 주기위해 buddy 로 설정
 
 			/* avoid re-evaluating load for this entity */
 			se = parent_entity(se);
@@ -4419,7 +4419,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		flags |= DEQUEUE_SLEEP;
 	}
 
-	for_each_sched_entity(se) {
+	for_each_sched_entity(se) { // root 까지 올라가며, load 정리
 		cfs_rq = cfs_rq_of(se);
 		cfs_rq->h_nr_running--;
 
@@ -5469,11 +5469,11 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev)
 
 again:
 #ifdef CONFIG_FAIR_GROUP_SCHED
-	if (!cfs_rq->nr_running)
-		goto idle;
+	if (!cfs_rq->nr_running) // queue 에 enqueue 된 entity 가 없다면
+		goto idle; // idle 로 점프하여, migration 을 진행한다.
 
-	if (prev->sched_class != &fair_sched_class)
-		goto simple;
+	if (prev->sched_class != &fair_sched_class) // 이전 task 가 fair 스케줄링을 사용한 태스크가 아니라면
+		goto simple; // 아래의 복잡한 과정 없이 simple 로 점프한다.
 
 	/*
 	 * Because of the set_next_buddy() in dequeue_task_fair() it is rather
@@ -5494,7 +5494,7 @@ again:
 		 */
 		if (curr) {
 			if (curr->on_rq)
-				update_curr(cfs_rq);
+				update_curr(cfs_rq); // 태스크가 아직 enqueue 되어있던 상태라면 vruntime 등을 갱신
 			else
 				curr = NULL;
 
@@ -5504,15 +5504,15 @@ again:
 			 * Therefore the 'simple' nr_running test will indeed
 			 * be correct.
 			 */
-			if (unlikely(check_cfs_rq_runtime(cfs_rq)))
-				goto simple;
+			if (unlikely(check_cfs_rq_runtime(cfs_rq))) // 너무 많이 돌아서 제한을 하는 경우
+				goto simple; // simple 로 점프
 		}
 
-		se = pick_next_entity(cfs_rq, curr);
-		cfs_rq = group_cfs_rq(se);
+		se = pick_next_entity(cfs_rq, curr); // 다음에 실행할 sched_entity 를 검색 (group or task)
+		cfs_rq = group_cfs_rq(se); // 그룹인 경우에는, 자식으로 top-down 으로 순회
 	} while (cfs_rq);
 
-	p = task_of(se);
+	p = task_of(se); // sched_entity 를 가지고 있는 task
 
 	/*
 	 * Since we haven't yet done put_prev_entity and if the selected task
@@ -5522,16 +5522,16 @@ again:
 	if (prev != p) {
 		struct sched_entity *pse = &prev->se;
 
-		while (!(cfs_rq = is_same_group(se, pse))) {
+		while (!(cfs_rq = is_same_group(se, pse))) { // pse 와 se 가 같은 그룹이될 때까지 하나씩 올려가며 찾기
 			int se_depth = se->depth;
 			int pse_depth = pse->depth;
 
 			if (se_depth <= pse_depth) {
-				put_prev_entity(cfs_rq_of(pse), pse);
+				put_prev_entity(cfs_rq_of(pse), pse); // enqueue 하며 curr 을 초기화
 				pse = parent_entity(pse);
 			}
 			if (se_depth >= pse_depth) {
-				set_next_entity(cfs_rq_of(se), se);
+				set_next_entity(cfs_rq_of(se), se); // dequeue 하며 curr 이 가리키게함
 				se = parent_entity(se);
 			}
 		}
@@ -5548,14 +5548,14 @@ simple:
 	cfs_rq = &rq->cfs;
 #endif
 
-	if (!cfs_rq->nr_running)
-		goto idle;
+	if (!cfs_rq->nr_running) // queue 에 enqueue 된 entity 가 없다면
+		goto idle; // migration 시도
 
 	put_prev_task(rq, prev);
 
 	do {
 		se = pick_next_entity(cfs_rq, NULL);
-		set_next_entity(cfs_rq, se);
+		set_next_entity(cfs_rq, se); // 다음에 실행할 task 를 설정
 		cfs_rq = group_cfs_rq(se);
 	} while (cfs_rq);
 
@@ -5574,7 +5574,7 @@ idle:
 	 * re-start the picking loop.
 	 */
 	lockdep_unpin_lock(&rq->lock);
-	new_tasks = idle_balance(rq);
+	new_tasks = idle_balance(rq); // 다른 cpu 에서 migration 
 	lockdep_pin_lock(&rq->lock);
 	/*
 	 * Because idle_balance() releases (and re-acquires) rq->lock, it is
@@ -5582,10 +5582,10 @@ idle:
 	 * must re-start the pick_next_entity() loop.
 	 */
 	if (new_tasks < 0)
-		return RETRY_TASK;
+		return RETRY_TASK; // 우선순위가 높은 task 가 생긴경우 retry
 
 	if (new_tasks > 0)
-		goto again;
+		goto again; // runqueue 에 성공적으로 다른 cpu 로 부터 migration 을 받아온 경우
 
 	return NULL;
 }
@@ -8138,13 +8138,13 @@ static void rq_offline_fair(struct rq *rq)
  * scheduler tick hitting a task of our scheduling class:
  */
 static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
-{
+{ // core.c scheduler_tick(void) 타이머 인터럽트마다 호출
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &curr->se;
 
-	for_each_sched_entity(se) {
+	for_each_sched_entity(se) { // bottomp up
 		cfs_rq = cfs_rq_of(se);
-		entity_tick(cfs_rq, se, queued);
+		entity_tick(cfs_rq, se, queued); // entity_tick 를 호출
 	}
 
 	if (static_branch_unlikely(&sched_numa_balancing))
