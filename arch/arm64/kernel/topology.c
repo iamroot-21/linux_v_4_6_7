@@ -278,13 +278,13 @@ static void __init reset_cpu_topology(void)
 {
 	unsigned int cpu;
 
-	for_each_possible_cpu(cpu) {
-		struct cpu_topology *cpu_topo = &cpu_topology[cpu];
-
+	for_each_possible_cpu(cpu) { // 사용 가능한 cpu로 looping
+		struct cpu_topology *cpu_topo = &cpu_topology[cpu]; // 각 cpu별 topology
+		// topology entity (thread_id, core_id, cluster_id) 초기화
 		cpu_topo->thread_id = -1;
 		cpu_topo->core_id = 0;
 		cpu_topo->cluster_id = -1;
-
+		// cpu_topology의 비트맵을 초기화하고 새로 기록
 		cpumask_clear(&cpu_topo->core_sibling);
 		cpumask_set_cpu(cpu, &cpu_topo->core_sibling);
 		cpumask_clear(&cpu_topo->thread_sibling);
@@ -294,12 +294,12 @@ static void __init reset_cpu_topology(void)
 
 void __init init_cpu_topology(void)
 {
-	reset_cpu_topology();
+	reset_cpu_topology(); // topology reset 진행
 
 	/*
 	 * Discard anything that was parsed if we hit an error so we
 	 * don't use partial information.
 	 */
-	if (of_have_populated_dt() && parse_dt_topology())
-		reset_cpu_topology();
+	if (of_have_populated_dt() && parse_dt_topology()) // 초기화 값이 잘못되었는지 확인
+		reset_cpu_topology(); // 잘못된 정보가 있을 경우 초기화 재실행
 }

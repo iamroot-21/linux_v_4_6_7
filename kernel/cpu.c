@@ -1698,7 +1698,10 @@ void init_cpu_online(const struct cpumask *src)
  */
 void __init boot_cpu_init(void)
 {
-	int cpu = smp_processor_id();
+	/**
+	 * @brief cpumask 기록
+	 */
+	int cpu = smp_processor_id(); // 현재 thread의 cpu id를 가져옴
 
 	/* Mark the boot cpu "present", "online" etc for SMP and UP case */
 	set_cpu_online(cpu, true);

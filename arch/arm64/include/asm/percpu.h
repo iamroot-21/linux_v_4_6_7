@@ -18,7 +18,7 @@
 
 static inline void set_my_cpu_offset(unsigned long off)
 {
-	asm volatile("msr tpidr_el1, %0" :: "r" (off) : "memory");
+	asm volatile("msr tpidr_el1, %0" :: "r" (off) : "memory"); // msr tpidr_el1 off
 }
 
 static inline unsigned long __my_cpu_offset(void)

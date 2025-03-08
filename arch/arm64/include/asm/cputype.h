@@ -109,7 +109,7 @@ static inline u32 __attribute_const__ read_cpuid_id(void)
 
 static inline u64 __attribute_const__ read_cpuid_mpidr(void)
 {
-	return read_cpuid(MPIDR_EL1);
+	return read_cpuid(MPIDR_EL1); // mrs %0, mpidr
 }
 
 static inline unsigned int __attribute_const__ read_cpuid_implementor(void)

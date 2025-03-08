@@ -78,6 +78,9 @@ static void push_irq_work_func(struct irq_work *work);
 
 void init_rt_rq(struct rt_rq *rt_rq)
 {
+	/**
+	 * @brief rt_rq 초기화
+	 */
 	struct rt_prio_array *array;
 	int i;
 

@@ -71,6 +71,9 @@ void init_dl_bw(struct dl_bw *dl_b)
 
 void init_dl_rq(struct dl_rq *dl_rq)
 {
+	/**
+	 * @brief dl_rq 초기화
+	 */
 	dl_rq->rb_root = RB_ROOT;
 
 #ifdef CONFIG_SMP

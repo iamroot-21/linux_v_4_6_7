@@ -157,14 +157,14 @@ static inline u64 mul_u64_u32_shr(u64 a, u32 mul, unsigned int shift)
 	u32 ah, al;
 	u64 ret;
 
-	al = a;
-	ah = a >> 32;
+	al = a; // low bit
+	ah = a >> 32; // high bit
 
-	ret = ((u64)al * mul) >> shift;
-	if (ah)
-		ret += ((u64)ah * mul) << (32 - shift);
+	ret = ((u64)al * mul) >> shift; // low bit 계산
+	if (ah) // high bit가 있을 경우
+		ret += ((u64)ah * mul) << (32 - shift); // high bit 계산
 
-	return ret;
+	return ret; // 계산한 bit 값 리턴
 }
 #endif /* mul_u64_u32_shr */
 

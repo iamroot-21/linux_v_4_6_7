@@ -164,13 +164,16 @@ static unsigned int get_update_sysctl_factor(void)
 
 static void update_sysctl(void)
 {
-	unsigned int factor = get_update_sysctl_factor();
+	/**
+	 * @brief 타임 슬라이스 관련 값 초기화
+	 */
+	unsigned int factor = get_update_sysctl_factor(); // time slice 관련 변수를 scaling 하기 위한 factor를 구함
 
 #define SET_SYSCTL(name) \
 	(sysctl_##name = (factor) * normalized_sysctl_##name)
-	SET_SYSCTL(sched_min_granularity);
-	SET_SYSCTL(sched_latency);
-	SET_SYSCTL(sched_wakeup_granularity);
+	SET_SYSCTL(sched_min_granularity); // sysctl_sched_min_granularity = factor * normalized_sysctl_sched_min_granularity
+	SET_SYSCTL(sched_latency); // sysctl_sched_latency = factor * normalized_sysctl_sched_latency
+	SET_SYSCTL(sched_wakeup_granularity); // sysctl_sched_wakeup_granularity = factor * normalized_sysctl_sched_wakeup_granularity
 #undef SET_SYSCTL
 }
 
@@ -216,24 +219,24 @@ static u64 __calc_delta(u64 delta_exec, unsigned long weight, struct load_weight
 	u64 fact = scale_load_down(weight);
 	int shift = WMULT_SHIFT;
 
-	__update_inv_weight(lw);
+	__update_inv_weight(lw); // inv_weight 값 업데이트
 
-	if (unlikely(fact >> 32)) {
-		while (fact >> 32) {
-			fact >>= 1;
-			shift--;
+	if (unlikely(fact >> 32)) { //fact가 32bit 보다 큰 경우
+		while (fact >> 32) { // fact 값에 따른 shift, fact 계산
+			fact >>= 1; // fact가 64bit 사용 시, shift -= 1
+			shift--; // fact가 128bit 사용 시, shift -= 2
 		}
 	}
 
 	/* hint to use a 32x32->64 mul */
-	fact = (u64)(u32)fact * lw->inv_weight;
+	fact = (u64)(u32)fact * lw->inv_weight; // fact에 inv_weight 적용
 
-	while (fact >> 32) {
+	while (fact >> 32) { // fact가 32bit 초과 사용 시, 초과하는 만큼 shift 값 감소
 		fact >>= 1;
 		shift--;
 	}
 
-	return mul_u64_u32_shr(delta_exec, fact, shift);
+	return mul_u64_u32_shr(delta_exec, fact, shift); // delta_exec, fact, shift로 vruntime 변화값 계산 후 리턴
 }
 
 
@@ -595,6 +598,9 @@ int sched_proc_update_handler(struct ctl_table *table, int write,
  */
 static inline u64 calc_delta_fair(u64 delta, struct sched_entity *se)
 {
+	/**
+	 * @brief NITE_0_LOAD 비율에 따라 vruntime 변화 값을 계산해서 리턴
+	 */
 	if (unlikely(se->load.weight != NICE_0_LOAD))
 		delta = __calc_delta(delta, NICE_0_LOAD, &se->load);
 
@@ -611,10 +617,13 @@ static inline u64 calc_delta_fair(u64 delta, struct sched_entity *se)
  */
 static u64 __sched_period(unsigned long nr_running)
 {
-	if (unlikely(nr_running > sched_nr_latency))
-		return nr_running * sysctl_sched_min_granularity;
+	/**
+	 * @brief running task 값에 따라 scheduling latency를 계산해 리턴
+	 */
+	if (unlikely(nr_running > sched_nr_latency)) // cfs 런큐에 9개 이상의 task가 들어있는 경우
+		return nr_running * sysctl_sched_min_granularity; // latency 값을 보정해서 리턴
 	else
-		return sysctl_sched_latency;
+		return sysctl_sched_latency; // default latency 리턴
 }
 
 /*
@@ -625,24 +634,27 @@ static u64 __sched_period(unsigned long nr_running)
  */
 static u64 sched_slice(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-	u64 slice = __sched_period(cfs_rq->nr_running + !se->on_rq);
+	/**
+	 * @brief entity의 타임 슬라이스 계산하기
+	 */
+	u64 slice = __sched_period(cfs_rq->nr_running + !se->on_rq); // TODO 6-42) 태스크 개수를 고려해서 latency 계산
 
-	for_each_sched_entity(se) {
+	for_each_sched_entity(se) { // scheduling entity 별로 looping
 		struct load_weight *load;
 		struct load_weight lw;
 
-		cfs_rq = cfs_rq_of(se);
+		cfs_rq = cfs_rq_of(se); // sched_entity를 소유한 cfs_rq를 가져옴
 		load = &cfs_rq->load;
 
-		if (unlikely(!se->on_rq)) {
+		if (unlikely(!se->on_rq)) { // enqueue되지 않은 경우
 			lw = cfs_rq->load;
 
-			update_load_add(&lw, se->load.weight);
+			update_load_add(&lw, se->load.weight); // cfs_rq->load += se->load.weight
 			load = &lw;
 		}
-		slice = __calc_delta(slice, se->load.weight, load);
+		slice = __calc_delta(slice, se->load.weight, load); // 가져온 6-42에서 계산한 latency에 weight를 적용해 slice 값 계산
 	}
-	return slice;
+	return slice; // 앞에서 계산한 slice 값 리턴
 }
 
 /*
@@ -700,29 +712,33 @@ void init_entity_runnable_average(struct sched_entity *se)
  */
 static void update_curr(struct cfs_rq *cfs_rq)
 {
+	/**
+	 * @brief CFS 런큐의 런타임 정보 갱신 
+	 * @details exec_start, vruntime 업데이트
+	 */
 	struct sched_entity *curr = cfs_rq->curr;
-	u64 now = rq_clock_task(rq_of(cfs_rq));
+	u64 now = rq_clock_task(rq_of(cfs_rq)); // cfs_rq->clock_task
 	u64 delta_exec;
 
-	if (unlikely(!curr))
+	if (unlikely(!curr)) // current entity 가 없을 경우 종료
 		return;
 
-	delta_exec = now - curr->exec_start;
-	if (unlikely((s64)delta_exec <= 0))
+	delta_exec = now - curr->exec_start; // 현재 시간과 실행 시간 차를 계산
+	if (unlikely((s64)delta_exec <= 0)) // 음수일 경우 종료
 		return;
 
-	curr->exec_start = now;
+	curr->exec_start = now; // 실행 시간 업데이트
 
 	schedstat_set(curr->statistics.exec_max,
 		      max(delta_exec, curr->statistics.exec_max));
 
-	curr->sum_exec_runtime += delta_exec;
+	curr->sum_exec_runtime += delta_exec; // 총 실행 시간 업데이트
 	schedstat_add(cfs_rq, exec_clock, delta_exec);
 
-	curr->vruntime += calc_delta_fair(delta_exec, curr);
-	update_min_vruntime(cfs_rq);
+	curr->vruntime += calc_delta_fair(delta_exec, curr); // TODO - 6-39) 총 vruntime 계산
+	update_min_vruntime(cfs_rq); // cfs_rq의 min_vruntime 업데이트
 
-	if (entity_is_task(curr)) {
+	if (entity_is_task(curr)) { // 디버깅 코드
 		struct task_struct *curtask = task_of(curr);
 
 		trace_sched_stat_runtime(curtask, delta_exec, curr->vruntime);
@@ -8333,8 +8349,11 @@ static void set_curr_task_fair(struct rq *rq)
 
 void init_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	/**
+	 * @brief cfs_rq 초기화
+	 */
 	cfs_rq->tasks_timeline = RB_ROOT;
-	cfs_rq->min_vruntime = (u64)(-(1LL << 20));
+	cfs_rq->min_vruntime = (u64)(-(1LL << 20)); // 0xFFFFFFFFFFF00000
 #ifndef CONFIG_64BIT
 	cfs_rq->min_vruntime_copy = cfs_rq->min_vruntime;
 #endif
@@ -8344,7 +8363,9 @@ void init_cfs_rq(struct cfs_rq *cfs_rq)
 #endif
 }
 
+#define CONFIG_FAIR_GROUP_SCHED // 임시 선언
 #ifdef CONFIG_FAIR_GROUP_SCHED
+#undef CONFIG_FAIR_GROUP_SCHED // 임시 선언
 static void task_move_group_fair(struct task_struct *p)
 {
 	detach_task_cfs_rq(p);
@@ -8444,31 +8465,39 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 			struct sched_entity *se, int cpu,
 			struct sched_entity *parent)
 {
-	struct rq *rq = cpu_rq(cpu);
+	/**
+	 * @brief 각 cfs_rq에 tg값을 초기화
+	 * @param[in,out] tg task group
+	 * @param[in,out] cfs_rq 초기화할 cfs_rq
+	 * @param[in,out] se 초기화할 se
+	 * @param[in] cpu target cpu id
+	 * @param[in,out] parent 부모 se
+	 */
+	struct rq *rq = cpu_rq(cpu); // cpu 별 rq를 가져옴
 
-	cfs_rq->tg = tg;
-	cfs_rq->rq = rq;
-	init_cfs_rq_runtime(cfs_rq);
+	cfs_rq->tg = tg; // cpu->cfs_rq->tg = tg
+	cfs_rq->rq = rq; // cpu->rq->cfs = cpu->rq
+	init_cfs_rq_runtime(cfs_rq); // 값 초기화
 
-	tg->cfs_rq[cpu] = cfs_rq;
-	tg->se[cpu] = se;
+	tg->cfs_rq[cpu] = cfs_rq; // task_group의 cpu별 cfs_rq 업데이트
+	tg->se[cpu] = se; // task_group의 cpu별 sched_entity 업데이트
 
 	/* se could be NULL for root_task_group */
-	if (!se)
+	if (!se) // sched_entity 가 null인 경우 (root task인 경우)
 		return;
 
-	if (!parent) {
+	if (!parent) { // parent가 없는 경우
 		se->cfs_rq = &rq->cfs;
 		se->depth = 0;
-	} else {
-		se->cfs_rq = parent->my_q;
-		se->depth = parent->depth + 1;
+	} else { // parent가 있는 경우
+		se->cfs_rq = parent->my_q; // sched_entity의 cfs_rq를 parent의 rq로 입력
+		se->depth = parent->depth + 1; // depth 업데이트 (parent의 개수만큼)
 	}
 
-	se->my_q = cfs_rq;
+	se->my_q = cfs_rq; // se가 사용할 rq를 cfs_rq로 입력
 	/* guarantee group entities always have weight */
-	update_load_set(&se->load, NICE_0_LOAD);
-	se->parent = parent;
+	update_load_set(&se->load, NICE_0_LOAD); // 가중치를 기본값인 NICE_0_LOAD로 입력
+	se->parent = parent; // se_parent 업데이트 (root인 경우 null)
 }
 
 static DEFINE_MUTEX(shares_mutex);
@@ -8618,12 +8647,12 @@ void show_numa_stats(struct task_struct *p, struct seq_file *m)
 __init void init_sched_fair_class(void)
 {
 #ifdef CONFIG_SMP
-	open_softirq(SCHED_SOFTIRQ, run_rebalance_domains);
+	open_softirq(SCHED_SOFTIRQ, run_rebalance_domains); // sortirq 핸들러 등록
 
 #ifdef CONFIG_NO_HZ_COMMON
 	nohz.next_balance = jiffies;
 	zalloc_cpumask_var(&nohz.idle_cpus_mask, GFP_NOWAIT);
-	cpu_notifier(sched_ilb_notifier, 0);
+	cpu_notifier(sched_ilb_notifier, 0); // hotplug callback 함수 등록
 #endif
 #endif /* SMP */
 

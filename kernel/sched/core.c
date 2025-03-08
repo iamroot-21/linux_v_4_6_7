@@ -7275,24 +7275,30 @@ DECLARE_PER_CPU(cpumask_var_t, load_balance_mask);
 
 void __init sched_init(void)
 {
+	/**
+	 * @brief root 태스크 그룹 초기화
+	 */
 	int i, j;
 	unsigned long alloc_size = 0, ptr;
 
+#define CONFIG_FAIR_GROUP_SCHED // 임시 선언
+#define CONFIG_CGROUP_SCHED // 임시 선언
+
 #ifdef CONFIG_FAIR_GROUP_SCHED
-	alloc_size += 2 * nr_cpu_ids * sizeof(void **);
+	alloc_size += 2 * nr_cpu_ids * sizeof(void **);  // 이중포인터 배열 사이즈 계산
 #endif
 #ifdef CONFIG_RT_GROUP_SCHED
 	alloc_size += 2 * nr_cpu_ids * sizeof(void **);
 #endif
 	if (alloc_size) {
-		ptr = (unsigned long)kzalloc(alloc_size, GFP_NOWAIT);
+		ptr = (unsigned long)kzalloc(alloc_size, GFP_NOWAIT); // alloc_size 만큼 물리 메모리 할당
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
-		root_task_group.se = (struct sched_entity **)ptr;
-		ptr += nr_cpu_ids * sizeof(void **);
+		root_task_group.se = (struct sched_entity **)ptr; // sched_entity 배열 입력
+		ptr += nr_cpu_ids * sizeof(void **); // 포인터 업데이트
 
-		root_task_group.cfs_rq = (struct cfs_rq **)ptr;
-		ptr += nr_cpu_ids * sizeof(void **);
+		root_task_group.cfs_rq = (struct cfs_rq **)ptr; // cfs_rq 배열 입력
+		ptr += nr_cpu_ids * sizeof(void **); // 포인터 업데이트
 
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 #ifdef CONFIG_RT_GROUP_SCHED
@@ -7326,28 +7332,28 @@ void __init sched_init(void)
 #endif /* CONFIG_RT_GROUP_SCHED */
 
 #ifdef CONFIG_CGROUP_SCHED
-	task_group_cache = KMEM_CACHE(task_group, 0);
+	task_group_cache = KMEM_CACHE(task_group, 0); // task_group을 슬랩 캐시 할당 받아옴
 
-	list_add(&root_task_group.list, &task_groups);
-	INIT_LIST_HEAD(&root_task_group.children);
-	INIT_LIST_HEAD(&root_task_group.siblings);
-	autogroup_init(&init_task);
+	list_add(&root_task_group.list, &task_groups); // root_task_group.list에 할당받은 task_group을 입력
+	INIT_LIST_HEAD(&root_task_group.children); // task_group.children 리스트 초기화
+	INIT_LIST_HEAD(&root_task_group.siblings); // task_group.silbings 리스트 초기화
+	autogroup_init(&init_task); // autogroup 관련 내용 초기화
 #endif /* CONFIG_CGROUP_SCHED */
 
-	for_each_possible_cpu(i) {
+	for_each_possible_cpu(i) { // 각 cpu별로 looping
 		struct rq *rq;
 
-		rq = cpu_rq(i);
-		raw_spin_lock_init(&rq->lock);
-		rq->nr_running = 0;
+		rq = cpu_rq(i); // cpu 의 run_queue 를 가져옴
+		raw_spin_lock_init(&rq->lock);  // spinlock
+		rq->nr_running = 0; // 소유 task 개수 초기화 (방금 초기화된 rq니까 0이 맞음)
 		rq->calc_load_active = 0;
 		rq->calc_load_update = jiffies + LOAD_FREQ;
-		init_cfs_rq(&rq->cfs);
-		init_rt_rq(&rq->rt);
-		init_dl_rq(&rq->dl);
+		init_cfs_rq(&rq->cfs); // cfs_rq init
+		init_rt_rq(&rq->rt); // rt_rq init
+		init_dl_rq(&rq->dl); // dl_rq init
 #ifdef CONFIG_FAIR_GROUP_SCHED
 		root_task_group.shares = ROOT_TASK_GROUP_LOAD;
-		INIT_LIST_HEAD(&rq->leaf_cfs_rq_list);
+		INIT_LIST_HEAD(&rq->leaf_cfs_rq_list); // leaf_cfs_rq_list 리스트 초기화
 		/*
 		 * How much cpu bandwidth does root_task_group get?
 		 *
@@ -7368,7 +7374,7 @@ void __init sched_init(void)
 		 * directly in rq->cfs (i.e root_task_group->se[] = NULL).
 		 */
 		init_cfs_bandwidth(&root_task_group.cfs_bandwidth);
-		init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL);
+		init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL); // TODO 6-45) root task group과 rq의 CFS 런큐를 연결
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
 		rq->rt.rt_runtime = def_rt_bandwidth.rt_runtime;
@@ -7409,7 +7415,7 @@ void __init sched_init(void)
 		atomic_set(&rq->nr_iowait, 0);
 	}
 
-	set_load_weight(&init_task);
+	set_load_weight(&init_task); // load weight 값을 설정
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	INIT_HLIST_HEAD(&init_task.preempt_notifiers);
@@ -7424,7 +7430,7 @@ void __init sched_init(void)
 	/*
 	 * During early bootup we pretend to be a normal task:
 	 */
-	current->sched_class = &fair_sched_class;
+	current->sched_class = &fair_sched_class; // scheduling class를 fair_sched_class로 설정
 
 	/*
 	 * Make us the idle thread. Technically, schedule() should not be
@@ -7432,21 +7438,25 @@ void __init sched_init(void)
 	 * but because we are the idle thread, we just pick up running again
 	 * when this runqueue becomes "idle".
 	 */
-	init_idle(current, smp_processor_id());
+	init_idle(current, smp_processor_id()); // swapper를 cpu 0의 idle 스레드로 사용하기 위해 관련 필드 설정
 
 	calc_load_update = jiffies + LOAD_FREQ;
 
+#define CONFIG_SMP // 임시 선언
 #ifdef CONFIG_SMP
 	zalloc_cpumask_var(&sched_domains_tmpmask, GFP_NOWAIT);
 	/* May be allocated at isolcpus cmdline parse time */
 	if (cpu_isolated_map == NULL)
 		zalloc_cpumask_var(&cpu_isolated_map, GFP_NOWAIT);
-	idle_thread_set_boot_cpu();
+	idle_thread_set_boot_cpu(); // per-cpu 변수 idle_thread에 cpu 0의 idle 스레드로 swapper를 설정
 	set_cpu_rq_start_time();
 #endif
-	init_sched_fair_class();
+#undef CONFIG_SMP // 임시 선언
+	init_sched_fair_class(); // fair 스케줄링 클래스를 사용하기 위한 초기화 진행
 
-	scheduler_running = 1;
+	scheduler_running = 1; // 초기화 종료 플래그
+#undef CONFIG_FAIR_GROUP_SCHED // 임시 선언
+#undef CONFIG_CGROUP_SCHED // 임시 선언
 }
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
