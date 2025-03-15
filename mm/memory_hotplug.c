@@ -1199,6 +1199,9 @@ static void rollback_node_hotadd(int nid, pg_data_t *pgdat)
  */
 int try_online_node(int nid)
 {
+	/**
+	 * @brief node가 offline일 경우 online으로 변경 시도함
+	 */
 	pg_data_t	*pgdat;
 	int	ret;
 
@@ -1206,7 +1209,7 @@ int try_online_node(int nid)
 		return 0;
 
 	mem_hotplug_begin();
-	pgdat = hotadd_new_pgdat(nid, 0);
+	pgdat = hotadd_new_pgdat(nid, 0); // pgdat 생성
 	if (!pgdat) {
 		pr_err("Cannot online node %d due to NULL pgdat\n", nid);
 		ret = -ENOMEM;

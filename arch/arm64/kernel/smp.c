@@ -392,16 +392,23 @@ static void __init hyp_mode_check(void)
 
 void __init smp_cpus_done(unsigned int max_cpus)
 {
+	/**
+	 * @brief SMP 작업이 완료된 뒤 호출되는 함수
+	 * @param[in] max_cpus cpu 개수 (로그 출력용)
+	 */
 	pr_info("SMP: Total of %d processors activated.\n", num_online_cpus());
-	setup_cpu_features();
-	hyp_mode_check();
-	apply_alternatives_all();
+	setup_cpu_features(); // cpu capabilities 기능을 계산
+	hyp_mode_check(); // hyp mode 상태 출력
+	apply_alternatives_all(); // boot cpu를 제외한 모든 온라인 cpu를 중지
 }
 
 void __init smp_prepare_boot_cpu(void)
 {
-	cpuinfo_store_boot_cpu();
-	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
+	/**
+	 * @brief boot cpu에 대한 처리를 진행
+	 */
+	cpuinfo_store_boot_cpu(); // boot cpu를 읽어 cpuinfo 값을 초기화
+	set_my_cpu_offset(per_cpu_offset(smp_processor_id())); // TPIDRPRW 레지스터를 사용하여 현재 cpu에 대한 per-cpu offset 값을 저장하여 per-cpu 변수에 대한 액세스를 가능하게 함
 }
 
 static u64 __init of_get_cpu_mpidr(struct device_node *dn)
@@ -414,13 +421,13 @@ static u64 __init of_get_cpu_mpidr(struct device_node *dn)
 	 * considered invalid to build a cpu_logical_map
 	 * entry.
 	 */
-	cell = of_get_property(dn, "reg", NULL);
-	if (!cell) {
+	cell = of_get_property(dn, "reg", NULL); // device node에서 property "reg"를 읽어 cell을 리턴
+	if (!cell) { // cell이 없는 경우
 		pr_err("%s: missing reg property\n", dn->full_name);
 		return INVALID_HWID;
 	}
 
-	hwid = of_read_number(cell, of_n_addr_cells(dn));
+	hwid = of_read_number(cell, of_n_addr_cells(dn)); // cpu의 mpidr를 읽어옴
 	/*
 	 * Non affinity bits must be set to 0 in the DT
 	 */
@@ -428,7 +435,7 @@ static u64 __init of_get_cpu_mpidr(struct device_node *dn)
 		pr_err("%s: invalid reg property\n", dn->full_name);
 		return INVALID_HWID;
 	}
-	return hwid;
+	return hwid; // mpidr
 }
 
 /*
@@ -453,13 +460,16 @@ static bool __init is_mpidr_duplicate(unsigned int cpu, u64 hwid)
  */
 static int __init smp_cpu_setup(int cpu)
 {
+	/**
+	 * @brief logical_cpu에 대해 cpu_operation 구조체 초기화 및 possible map 설정
+	 */
 	if (cpu_read_ops(cpu))
 		return -ENODEV;
 
 	if (cpu_ops[cpu]->cpu_init(cpu))
 		return -ENODEV;
 
-	set_cpu_possible(cpu, true);
+	set_cpu_possible(cpu, true); // cpu bit mask를 true로 변경
 
 	return 0;
 }
@@ -554,13 +564,13 @@ static void __init of_parse_and_init_cpus(void)
 {
 	struct device_node *dn = NULL;
 
-	while ((dn = of_find_node_by_type(dn, "cpu"))) {
-		u64 hwid = of_get_cpu_mpidr(dn);
+	while ((dn = of_find_node_by_type(dn, "cpu"))) { // device node에서 cpu를 찾음
+		u64 hwid = of_get_cpu_mpidr(dn); // 디바이스 트리에서 mpidr를 읽어옴
 
 		if (hwid == INVALID_HWID)
 			goto next;
 
-		if (is_mpidr_duplicate(cpu_count, hwid)) {
+		if (is_mpidr_duplicate(cpu_count, hwid)) { // hwid 중복 확인
 			pr_err("%s: duplicate cpu reg properties in the DT\n",
 				dn->full_name);
 			goto next;
@@ -607,10 +617,13 @@ next:
  */
 void __init smp_init_cpus(void)
 {
+	/**
+	 * @brief ACPI에서 사용 가능한 cpu 노드를 찾아 logical_cpu에 기록
+	 */
 	int i;
 
-	if (acpi_disabled)
-		of_parse_and_init_cpus();
+	if (acpi_disabled) // acpi를 사용하지 않는 경우
+		of_parse_and_init_cpus(); // 디바이스 트리의 cpu 노드를 모두 찾아 __cpu_logical_map[] 배열을 갱신
 	else
 		/*
 		 * do a walk of MADT to determine how many CPUs
@@ -624,7 +637,7 @@ void __init smp_init_cpus(void)
 		pr_warn("no. of cores (%d) greater than configured maximum of %d - clipping\n",
 			cpu_count, NR_CPUS);
 
-	if (!bootcpu_valid) {
+	if (!bootcpu_valid) { // boot cpu를 찾지 못한 경우
 		pr_err("missing boot CPU MPIDR, not enabling secondaries\n");
 		return;
 	}
@@ -636,9 +649,9 @@ void __init smp_init_cpus(void)
 	 * with entries in cpu_logical_map while initializing the cpus.
 	 * If the cpu set-up fails, invalidate the cpu_logical_map entry.
 	 */
-	for (i = 1; i < NR_CPUS; i++) {
+	for (i = 1; i < NR_CPUS; i++) { // cpu_logical_map invalid check
 		if (cpu_logical_map(i) != INVALID_HWID) {
-			if (smp_cpu_setup(i))
+			if (smp_cpu_setup(i)) // TODO 7-12) 해당 cpu를 possible map에 설정
 				cpu_logical_map(i) = INVALID_HWID;
 		}
 	}
@@ -646,10 +659,14 @@ void __init smp_init_cpus(void)
 
 void __init smp_prepare_cpus(unsigned int max_cpus)
 {
+	/**
+	 * @brief smp_init 수행 전에 준비 작업 진행
+	 * @param[in] max_cpus cpu 개수
+	 */
 	int err;
 	unsigned int cpu, ncores = num_possible_cpus();
 
-	init_cpu_topology();
+	init_cpu_topology(); // topology init
 
 	smp_store_cpu_info(smp_processor_id());
 
@@ -657,7 +674,7 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	 * are we trying to boot more cores than exist?
 	 */
 	if (max_cpus > ncores)
-		max_cpus = ncores;
+		max_cpus = ncores; // max_cpu 보다 core가 많은 경우 업데이트
 
 	/* Don't bother if we're effectively UP */
 	if (max_cpus <= 1)
@@ -672,7 +689,7 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	 */
 	max_cpus--;
 	for_each_possible_cpu(cpu) {
-		if (max_cpus == 0)
+		if (max_cpus == 0) // 더 진행할 수 있는 코어가 없는 경우
 			break;
 
 		if (cpu == smp_processor_id())
@@ -681,11 +698,11 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 		if (!cpu_ops[cpu])
 			continue;
 
-		err = cpu_ops[cpu]->cpu_prepare(cpu);
+		err = cpu_ops[cpu]->cpu_prepare(cpu); // cpu 별로 사전 작업 진행
 		if (err)
 			continue;
 
-		set_cpu_present(cpu, true);
+		set_cpu_present(cpu, true); // cpu present mask를 true 로 설정
 		max_cpus--;
 	}
 }

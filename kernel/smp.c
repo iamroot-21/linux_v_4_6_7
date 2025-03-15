@@ -567,20 +567,20 @@ void __init smp_init(void)
 {
 	unsigned int cpu;
 
-	idle_threads_init();
-	cpuhp_threads_init();
+	idle_threads_init(); // 모든 possible cpu의 idle 스레드를 생성하고 초기화
+	cpuhp_threads_init(); // 핫플러그 스레드 초기화
 
 	/* FIXME: This should be done in userspace --RR */
 	for_each_present_cpu(cpu) {
 		if (num_online_cpus() >= setup_max_cpus)
 			break;
-		if (!cpu_online(cpu))
-			cpu_up(cpu);
+		if (!cpu_online(cpu)) // offline cpu인 경우
+			cpu_up(cpu); // cpu up 시도
 	}
 
 	/* Any cleanup work */
-	smp_announce();
-	smp_cpus_done(setup_max_cpus);
+	smp_announce(); // cpu 개수 출력
+	smp_cpus_done(setup_max_cpus); // 작업 완료 확인
 }
 
 /*

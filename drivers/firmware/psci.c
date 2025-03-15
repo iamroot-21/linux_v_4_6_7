@@ -572,17 +572,20 @@ static const struct of_device_id const psci_of_match[] __initconst = {
 
 int __init psci_dt_init(void)
 {
+	/**
+	 * @brief 디바이스 트리에서 psci에 해당하는 노드를 찾아 초기화 함수 호출
+	 */
 	struct device_node *np;
 	const struct of_device_id *matched_np;
 	psci_initcall_t init_fn;
 
-	np = of_find_matching_node_and_match(NULL, psci_of_match, &matched_np);
+	np = of_find_matching_node_and_match(NULL, psci_of_match, &matched_np); // psci_of_match 값으로 psci 에 해당하는 노드를 읽어옴
 
-	if (!np)
+	if (!np) // psci 관련 값이 없는 경우
 		return -ENODEV;
 
-	init_fn = (psci_initcall_t)matched_np->data;
-	return init_fn(np);
+	init_fn = (psci_initcall_t)matched_np->data; // 호출 가능한 함수형으로 변환
+	return init_fn(np); // 함수 호출 
 }
 
 #ifdef CONFIG_ACPI

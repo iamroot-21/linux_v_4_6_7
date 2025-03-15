@@ -46,35 +46,48 @@ static const struct cpu_operations *acpi_supported_cpu_ops[] __initconst = {
 
 static const struct cpu_operations * __init cpu_get_ops(const char *name)
 {
+	/**
+	 * @brief cpu 오퍼레이션을 수행하기 위한 cpu_operation 구조체를 리턴한다.
+	 * @param[out] name operation name
+	 * @return
+	 * 	Pass - cpu_operations*
+	 * 	Fail - null
+	 */
 	const struct cpu_operations **ops;
 
-	ops = acpi_disabled ? dt_supported_cpu_ops : acpi_supported_cpu_ops;
+	ops = acpi_disabled ? dt_supported_cpu_ops : acpi_supported_cpu_ops; // acpi disable 상태에 따라 구조체 값이 변경됨
 
-	while (*ops) {
-		if (!strcmp(name, (*ops)->name))
-			return *ops;
+	while (*ops) { // operation 순회
+		if (!strcmp(name, (*ops)->name)) // operation name을 copy
+			return *ops; // copy 성공시, 해당 operation을 리턴
 
-		ops++;
+		ops++; // 다음 operation 으로
 	}
 
-	return NULL;
+	return NULL; // 적합한 operation이 없는 경우 null
 }
 
 static const char *__init cpu_read_enable_method(int cpu)
 {
+	/**
+	 * @brief 해당 cpu의 enable_method를 가져옴
+	 * @return
+	 *  pass - char* (enable_method)
+	 *  fail - null
+	 */
 	const char *enable_method;
 
-	if (acpi_disabled) {
-		struct device_node *dn = of_get_cpu_node(cpu, NULL);
+	if (acpi_disabled) { // acpi disable인 경우
+		struct device_node *dn = of_get_cpu_node(cpu, NULL); // device node를 가져옴
 
-		if (!dn) {
+		if (!dn) { // 실패 케이스
 			if (!cpu)
 				pr_err("Failed to find device node for boot cpu\n");
 			return NULL;
 		}
 
-		enable_method = of_get_property(dn, "enable-method", NULL);
-		if (!enable_method) {
+		enable_method = of_get_property(dn, "enable-method", NULL); // enable-method를 가져옴
+		if (!enable_method) { // enable-method가 없는 경우 (없는 케이스도 있음)
 			/*
 			 * The boot CPU may not have an enable method (e.g.
 			 * when spin-table is used for secondaries).
@@ -85,7 +98,7 @@ static const char *__init cpu_read_enable_method(int cpu)
 					dn->full_name);
 		}
 	} else {
-		enable_method = acpi_get_enable_method(cpu);
+		enable_method = acpi_get_enable_method(cpu); // enable-method를 가져옴
 		if (!enable_method) {
 			/*
 			 * In ACPI systems the boot CPU does not require
@@ -105,13 +118,16 @@ static const char *__init cpu_read_enable_method(int cpu)
  */
 int __init cpu_read_ops(int cpu)
 {
-	const char *enable_method = cpu_read_enable_method(cpu);
+	/**
+	 * @brief enable-method에 타입의 정보를 읽어온다.
+	 */
+	const char *enable_method = cpu_read_enable_method(cpu); // cpu id에 해당하는 operation 이름을 구한다.
 
-	if (!enable_method)
+	if (!enable_method) // 없는 경우
 		return -ENODEV;
 
-	cpu_ops[cpu] = cpu_get_ops(enable_method);
-	if (!cpu_ops[cpu]) {
+	cpu_ops[cpu] = cpu_get_ops(enable_method); // operation 구조체를 가져옴
+	if (!cpu_ops[cpu]) { // 가져오는데 실패한 경우
 		pr_warn("Unsupported enable-method: %s\n", enable_method);
 		return -EOPNOTSUPP;
 	}

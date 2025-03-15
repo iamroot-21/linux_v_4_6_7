@@ -757,17 +757,21 @@ static int __init_or_module do_one_initcall_debug(initcall_t fn)
 
 int __init_or_module do_one_initcall(initcall_t fn)
 {
+	/**
+	 * @brief 입력받은 initcall 함수를 실행
+	 * @param[in] fn 실행할 initcall 함수
+	 */
 	int count = preempt_count();
 	int ret;
 	char msgbuf[64];
 
-	if (initcall_blacklisted(fn))
+	if (initcall_blacklisted(fn)) // initcall이 blacklist 상태인지 확인
 		return -EPERM;
 
-	if (initcall_debug)
-		ret = do_one_initcall_debug(fn);
+	if (initcall_debug) // debug 함수인 경우
+		ret = do_one_initcall_debug(fn); // 실행 시간 측정 및 실행
 	else
-		ret = fn();
+		ret = fn(); // 실행
 
 	msgbuf[0] = 0;
 
@@ -864,10 +868,13 @@ static void __init do_basic_setup(void)
 
 static void __init do_pre_smp_initcalls(void)
 {
+	/**
+	 * @brief __initcall_start 부터 __initcall0_start 사이 함수를 실행
+	 */
 	initcall_t *fn;
 
-	for (fn = __initcall_start; fn < __initcall0_start; fn++)
-		do_one_initcall(*fn);
+	for (fn = __initcall_start; fn < __initcall0_start; fn++) // initcall 함수로 looping
+		do_one_initcall(*fn); // initcall 함수 실행
 }
 
 /*

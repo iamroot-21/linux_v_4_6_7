@@ -101,7 +101,9 @@ static int cpuhp_invoke_callback(unsigned int cpu, enum cpuhp_state step,
 	return ret;
 }
 
+#define CONFIG_SMP // 임시 선언
 #ifdef CONFIG_SMP
+#undef CONFIG_SMP // 임시 선언
 /* Serializes the updates to cpu_online_mask, cpu_present_mask */
 static DEFINE_MUTEX(cpu_add_remove_lock);
 bool cpuhp_tasks_frozen;
@@ -407,18 +409,25 @@ static void undo_cpu_up(unsigned int cpu, struct cpuhp_cpu_state *st,
 static int cpuhp_up_callbacks(unsigned int cpu, struct cpuhp_cpu_state *st,
 			      struct cpuhp_step *steps, enum cpuhp_state target)
 {
+	/**
+	 * @brief cpu up을 위한 콜백 함수 호출
+	 * @param[in] cpu target cpu
+	 * @param[in] st 현재 cpu state
+	 * @param[in] steps TBD
+	 * @param[in] target target cpu state
+	 */
 	enum cpuhp_state prev_state = st->state;
 	int ret = 0;
 
-	while (st->state < target) {
+	while (st->state < target) { // target state 까지 진행
 		struct cpuhp_step *step;
 
 		st->state++;
-		step = steps + st->state;
-		ret = cpuhp_invoke_callback(cpu, st->state, step->startup);
-		if (ret) {
-			st->target = prev_state;
-			undo_cpu_up(cpu, st, steps);
+		step = steps + st->state; // step 계산 steps[st->state]
+		ret = cpuhp_invoke_callback(cpu, st->state, step->startup); // 각 step 별 startup 함수 실행
+		if (ret) { // 실패한 경우
+			st->target = prev_state; // 이전 state로 복원
+			undo_cpu_up(cpu, st, steps); // cpu_up 취소
 			break;
 		}
 	}
@@ -939,27 +948,33 @@ void cpuhp_online_idle(enum cpuhp_state state)
 /* Requires cpu_add_remove_lock to be held */
 static int _cpu_up(unsigned int cpu, int tasks_frozen, enum cpuhp_state target)
 {
+	/**
+	 * @brief cpu bring up
+	 * @param[in] cpu target cpu
+	 * @param[in] tasks_frozen TBD
+	 * @param[in] target TBD
+	 */
 	struct cpuhp_cpu_state *st = per_cpu_ptr(&cpuhp_state, cpu);
 	struct task_struct *idle;
 	int ret = 0;
 
-	cpu_hotplug_begin();
+	cpu_hotplug_begin(); // cpu hotplug를 위한 초기 동작 시 mutex lock 상태로 진행하기 위한 작업
 
-	if (!cpu_present(cpu)) {
+	if (!cpu_present(cpu)) { // present 상태가 아닐 경우
 		ret = -EINVAL;
-		goto out;
+		goto out; // 종료
 	}
 
 	/*
 	 * The caller of do_cpu_up might have raced with another
 	 * caller. Ignore it for now.
 	 */
-	if (st->state >= target)
+	if (st->state >= target) // cpu의 상태가 지정하려는 상태보다 높은 경우
 		goto out;
 
-	if (st->state == CPUHP_OFFLINE) {
+	if (st->state == CPUHP_OFFLINE) { // OFFLINE 상태인 경우
 		/* Let it fail before we try to bring the cpu up */
-		idle = idle_thread_get(cpu);
+		idle = idle_thread_get(cpu); // idle thread를 가져옴
 		if (IS_ERR(idle)) {
 			ret = PTR_ERR(idle);
 			goto out;
@@ -968,12 +983,12 @@ static int _cpu_up(unsigned int cpu, int tasks_frozen, enum cpuhp_state target)
 
 	cpuhp_tasks_frozen = tasks_frozen;
 
-	st->target = target;
+	st->target = target; // cpu의 다음 상태를 지정
 	/*
 	 * If the current CPU state is in the range of the AP hotplug thread,
 	 * then we need to kick the thread once more.
 	 */
-	if (st->state > CPUHP_BRINGUP_CPU) {
+	if (st->state > CPUHP_BRINGUP_CPU) { // 현재 state가 AP hotplug의 범위에 있을 경우 thread를 kick 함
 		ret = cpuhp_kick_ap_work(cpu);
 		/*
 		 * The AP side has done the error rollback already. Just
@@ -988,18 +1003,21 @@ static int _cpu_up(unsigned int cpu, int tasks_frozen, enum cpuhp_state target)
 	 * CPUHP_BRINGUP_CPU. After that the AP hotplug thread is
 	 * responsible for bringing it up to the target state.
 	 */
-	target = min((int)target, CPUHP_BRINGUP_CPU);
-	ret = cpuhp_up_callbacks(cpu, st, cpuhp_bp_states, target);
+	target = min((int)target, CPUHP_BRINGUP_CPU); // min target 값 조정
+	ret = cpuhp_up_callbacks(cpu, st, cpuhp_bp_states, target); // TODO 7-24) cpu bring up을 위해 단계별 상태에 해당하는 콜백 함수 수행
 out:
-	cpu_hotplug_done();
-	return ret;
+	cpu_hotplug_done(); // hotplug 값 작업 종료, mutex 해제
+	return ret; // 결과 리턴
 }
 
 static int do_cpu_up(unsigned int cpu, enum cpuhp_state target)
 {
+	/**
+	 * @brief cpu_up 시도
+	 */
 	int err = 0;
 
-	if (!cpu_possible(cpu)) {
+	if (!cpu_possible(cpu)) { // possible 하지 않은 경우 error case
 		pr_err("can't online cpu %d because it is not configured as may-hotadd at boot time\n",
 		       cpu);
 #if defined(CONFIG_IA64)
@@ -1008,20 +1026,20 @@ static int do_cpu_up(unsigned int cpu, enum cpuhp_state target)
 		return -EINVAL;
 	}
 
-	err = try_online_node(cpu_to_node(cpu));
+	err = try_online_node(cpu_to_node(cpu)); // hotplug 를 지원하는 경우 node를 새로 만듦
 	if (err)
 		return err;
 
-	cpu_maps_update_begin();
+	cpu_maps_update_begin(); // cpu online mask 변경 작업 직렬화를 위해 mutex_lock 진행
 
-	if (cpu_hotplug_disabled) {
+	if (cpu_hotplug_disabled) { // hotplug가 disabled인 경우 불가능함
 		err = -EBUSY;
 		goto out;
 	}
 
-	err = _cpu_up(cpu, 0, target);
+	err = _cpu_up(cpu, 0, target); // cpu_up 시도
 out:
-	cpu_maps_update_done();
+	cpu_maps_update_done(); // mutex_unlock 진행
 	return err;
 }
 

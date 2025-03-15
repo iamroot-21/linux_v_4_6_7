@@ -64,13 +64,16 @@ static inline void idle_init(unsigned int cpu)
  */
 void __init idle_threads_init(void)
 {
+	/**
+	 * @brief 모든 cpu의 idle thread 초기화
+	 */
 	unsigned int cpu, boot_cpu;
 
-	boot_cpu = smp_processor_id();
+	boot_cpu = smp_processor_id(); // boot cpu를 가져옴 (kernel init 도중 실행되었으므로 무조건 boot cpu임)
 
 	for_each_possible_cpu(cpu) {
 		if (cpu != boot_cpu)
-			idle_init(cpu);
+			idle_init(cpu); // idle task 생성 및 초기화
 	}
 }
 #endif

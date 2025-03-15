@@ -248,9 +248,9 @@ void cpuinfo_store_cpu(void)
 
 void __init cpuinfo_store_boot_cpu(void)
 {
-	struct cpuinfo_arm64 *info = &per_cpu(cpu_data, 0);
-	__cpuinfo_store_cpu(info);
+	struct cpuinfo_arm64 *info = &per_cpu(cpu_data, 0); // boot cpu (cpuid 0)를 읽어옴
+	__cpuinfo_store_cpu(info); // info에 초기 값을 쓴다
 
-	boot_cpu_data = *info;
-	init_cpu_features(&boot_cpu_data);
+	boot_cpu_data = *info; // cpuinfo를 boot_cpu_data에 저장
+	init_cpu_features(&boot_cpu_data); // initialize 진행
 }
