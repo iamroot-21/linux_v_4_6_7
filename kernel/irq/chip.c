@@ -221,12 +221,12 @@ void irq_shutdown(struct irq_desc *desc)
 
 void irq_enable(struct irq_desc *desc)
 {
-	irq_state_clr_disabled(desc);
-	if (desc->irq_data.chip->irq_enable)
-		desc->irq_data.chip->irq_enable(&desc->irq_data);
-	else
-		desc->irq_data.chip->irq_unmask(&desc->irq_data);
-	irq_state_clr_masked(desc);
+	irq_state_clr_disabled(desc); // IRQ_DISABLE flag 해제
+	if (desc->irq_data.chip->irq_enable) // chip이 enabled 상태인 경우
+		desc->irq_data.chip->irq_enable(&desc->irq_data); // chip의 irq_enable 함수 실행 (콜백 함수인듯)
+	else // chip이 disabled 상태인 경우
+		desc->irq_data.chip->irq_unmask(&desc->irq_data); // irq_unmask 진행
+	irq_state_clr_masked(desc); // IRQ_MASKED 플래그 초기화
 }
 
 /**

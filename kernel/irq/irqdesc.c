@@ -116,7 +116,9 @@ EXPORT_SYMBOL_GPL(nr_irqs);
 static DEFINE_MUTEX(sparse_irq_lock);
 static DECLARE_BITMAP(allocated_irqs, IRQ_BITMAP_BITS);
 
+#define CONFIG_SPARSE_IRQ // 임시 선언
 #ifdef CONFIG_SPARSE_IRQ
+#undef CONFIG_SPARSE_IRQ // 임시 선언
 
 static RADIX_TREE(irq_desc_tree, GFP_KERNEL);
 
@@ -261,27 +263,27 @@ int __init early_irq_init(void)
 	int i, initcnt, node = first_online_node;
 	struct irq_desc *desc;
 
-	init_irq_default_affinity();
+	init_irq_default_affinity(); // irq_default_affinity cpumask를 초기화
 
 	/* Let arch update nr_irqs and return the nr of preallocated irqs */
-	initcnt = arch_probe_nr_irqs();
+	initcnt = arch_probe_nr_irqs(); // NR_IRQS_LEGACY 값을 가져온다.
 	printk(KERN_INFO "NR_IRQS:%d nr_irqs:%d %d\n", NR_IRQS, nr_irqs, initcnt);
 
-	if (WARN_ON(nr_irqs > IRQ_BITMAP_BITS))
+	if (WARN_ON(nr_irqs > IRQ_BITMAP_BITS)) // bit map 개수보다 많은 경우 값 조정
 		nr_irqs = IRQ_BITMAP_BITS;
 
-	if (WARN_ON(initcnt > IRQ_BITMAP_BITS))
+	if (WARN_ON(initcnt > IRQ_BITMAP_BITS)) // bit map 개수보다 많은 경우 값 조정
 		initcnt = IRQ_BITMAP_BITS;
 
-	if (initcnt > nr_irqs)
-		nr_irqs = initcnt;
+	if (initcnt > nr_irqs) // 리눅스가 설정한 값보다 큰 경우
+		nr_irqs = initcnt; // 값 업데이트
 
 	for (i = 0; i < initcnt; i++) {
-		desc = alloc_desc(i, node, NULL);
-		set_bit(i, allocated_irqs);
-		irq_insert_desc(i, desc);
+		desc = alloc_desc(i, node, NULL); // irq 개수만큼 desc 생성
+		set_bit(i, allocated_irqs); // 할당된 인트럽트 번호를 저장하는 비트맵에 표시
+		irq_insert_desc(i, desc); // CONFIG_SPARSE_IRQ를 설정한 경우 radix tree에 추가
 	}
-	return arch_early_irq_init();
+	return arch_early_irq_init(); // early_init 함수 실행 (arm64는 없음)
 }
 
 #else /* !CONFIG_SPARSE_IRQ */

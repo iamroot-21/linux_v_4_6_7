@@ -91,6 +91,9 @@ static inline int op_cpu_kill(unsigned int cpu)
  */
 static int boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
+	/**
+	 * @brief cpu architecture 별 boot on 함수 실행
+	 */
 	if (cpu_ops[cpu]->cpu_boot)
 		return cpu_ops[cpu]->cpu_boot(cpu);
 
@@ -101,6 +104,13 @@ static DECLARE_COMPLETION(cpu_running);
 
 int __cpu_up(unsigned int cpu, struct task_struct *idle)
 {
+	/**
+	 * @brief 아키텍처 의존적인 부분을 통해 실제 bring up을 수행하는 함수
+	 * @param[in] idle idle task
+	 * @return
+	 *  0 : pass
+	 *  others : fail
+	 */
 	int ret;
 	long status;
 
@@ -108,33 +118,33 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	 * We need to tell the secondary core where to find its stack and the
 	 * page tables.
 	 */
-	secondary_data.stack = task_stack_page(idle) + THREAD_START_SP;
-	update_cpu_boot_status(CPU_MMU_OFF);
+	secondary_data.stack = task_stack_page(idle) + THREAD_START_SP; // secondary_data 초기화
+	update_cpu_boot_status(CPU_MMU_OFF); // secondary data의 상태를 CPU_MMU_OFF로 변경
 	__flush_dcache_area(&secondary_data, sizeof(secondary_data));
 
 	/*
 	 * Now bring the CPU into our world.
 	 */
-	ret = boot_secondary(cpu, idle);
+	ret = boot_secondary(cpu, idle); // TODO 7-27) cpu_boot 콜백 함수를 실행
 	if (ret == 0) {
 		/*
 		 * CPU was successfully started, wait for it to come online or
 		 * time out.
 		 */
-		wait_for_completion_timeout(&cpu_running,
+		wait_for_completion_timeout(&cpu_running, // 지정된 시간까지 값 확인
 					    msecs_to_jiffies(1000));
 
-		if (!cpu_online(cpu)) {
+		if (!cpu_online(cpu)) { // second dary boot pass, oneline chec fail
 			pr_crit("CPU%u: failed to come online\n", cpu);
 			ret = -EIO;
 		}
-	} else {
+	} else { // secondary boot fail
 		pr_err("CPU%u: failed to boot: %d\n", cpu, ret);
 	}
 
-	secondary_data.stack = NULL;
-	status = READ_ONCE(secondary_data.status);
-	if (ret && status) {
+	secondary_data.stack = NULL; // 사용했던 정적 변수 초기화
+	status = READ_ONCE(secondary_data.status); // 상태 값을 읽어옴
+	if (ret && status) { // error case인 경우 status에 따라 로그 출력
 
 		if (status == CPU_MMU_OFF)
 			status = READ_ONCE(__early_cpu_boot_status);
@@ -174,6 +184,9 @@ static void smp_store_cpu_info(unsigned int cpuid)
  */
 asmlinkage void secondary_start_kernel(void)
 {
+	/**
+	 * @brief 실제 cpu booting을 실행
+	 */
 	struct mm_struct *mm = &init_mm;
 	unsigned int cpu = smp_processor_id();
 
@@ -181,18 +194,18 @@ asmlinkage void secondary_start_kernel(void)
 	 * All kernel threads share the same mm context; grab a
 	 * reference and switch to it.
 	 */
-	atomic_inc(&mm->mm_count);
-	current->active_mm = mm;
+	atomic_inc(&mm->mm_count); // 참조 카운터 증가
+	current->active_mm = mm; // task의 active_mm을 init_mm으로 설정
 
-	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
+	set_my_cpu_offset(per_cpu_offset(smp_processor_id())); // cpu offset 계산해 tpidr_el1에 입력
 
 	/*
 	 * TTBR0 is only used for the identity mapping at this stage. Make it
 	 * point to zero page to avoid speculatively fetching new entries.
 	 */
-	cpu_uninstall_idmap();
+	cpu_uninstall_idmap(); // idmap 제거, active_mm의 pgd를 입력을 위해 TTBR0 를 empty_zero_page로 설정, tlb flush
 
-	preempt_disable();
+	preempt_disable(); // 선점 비활성화
 	trace_hardirqs_off();
 
 	/*
@@ -200,22 +213,22 @@ asmlinkage void secondary_start_kernel(void)
 	 * this CPU ticks all of those. If it doesn't, the CPU will
 	 * fail to come online.
 	 */
-	verify_local_cpu_capabilities();
+	verify_local_cpu_capabilities(); // online 상태로 변경 가능한지 capabilities 확인
 
 	if (cpu_ops[cpu]->cpu_postboot)
-		cpu_ops[cpu]->cpu_postboot();
+		cpu_ops[cpu]->cpu_postboot(); // postboot callback 함수 실행
 
 	/*
 	 * Log the CPU info before it is marked online and might get read.
 	 */
-	cpuinfo_store_cpu();
+	cpuinfo_store_cpu(); // cpu 관련 정보 갱신
 
 	/*
 	 * Enable GIC and timers.
 	 */
-	notify_cpu_starting(cpu);
+	notify_cpu_starting(cpu); // 단계 별로 cpuhp_invoke_callback을 실행
 
-	smp_store_cpu_info(cpu);
+	smp_store_cpu_info(cpu); // MPIDR 값을 읽어 topology 저장, cpu 정보 갱신
 
 	/*
 	 * OK, now it's safe to let the boot CPU continue.  Wait for
@@ -224,20 +237,20 @@ asmlinkage void secondary_start_kernel(void)
 	 */
 	pr_info("CPU%u: Booted secondary processor [%08x]\n",
 					 cpu, read_cpuid_id());
-	update_cpu_boot_status(CPU_BOOT_SUCCESS);
+	update_cpu_boot_status(CPU_BOOT_SUCCESS); // cpu status 업데이트
 	/* Make sure the status update is visible before we complete */
-	smp_wmb();
-	set_cpu_online(cpu, true);
-	complete(&cpu_running);
+	smp_wmb(); // barrier
+	set_cpu_online(cpu, true); // cpu offline -> online
+	complete(&cpu_running); // cpu booting 완료 통지
 
-	local_dbg_enable();
+	local_dbg_enable(); // debug, irq, async 신호 활성화
 	local_irq_enable();
 	local_async_enable();
 
 	/*
 	 * OK, it's off to the idle thread for us
 	 */
-	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE);
+	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE); // cpuhp_state 상태를 idle로 변경, cpu_idle_loop 실행
 }
 
 #ifdef CONFIG_HOTPLUG_CPU

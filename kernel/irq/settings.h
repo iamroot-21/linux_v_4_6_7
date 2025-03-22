@@ -107,7 +107,7 @@ static inline void irq_settings_set_norequest(struct irq_desc *desc)
 	desc->status_use_accessors |= _IRQ_NOREQUEST;
 }
 
-static inline bool irq_settings_can_thread(struct irq_desc *desc)
+static inline boolirq_settings_can_thread(struct irq_desc *desc)
 {
 	return !(desc->status_use_accessors & _IRQ_NOTHREAD);
 }

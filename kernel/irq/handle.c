@@ -134,36 +134,39 @@ void __irq_wake_thread(struct irq_desc *desc, struct irqaction *action)
 
 irqreturn_t handle_irq_event_percpu(struct irq_desc *desc)
 {
+	/**
+	 * @brief irq 콜백 함수 실행
+	 */
 	irqreturn_t retval = IRQ_NONE;
 	unsigned int flags = 0, irq = desc->irq_data.irq;
 	struct irqaction *action;
 
-	for_each_action_of_desc(desc, action) {
+	for_each_action_of_desc(desc, action) { // desc 내부에 모든 action으로 looping
 		irqreturn_t res;
 
 		trace_irq_handler_entry(irq, action);
-		res = action->handler(irq, action->dev_id);
+		res = action->handler(irq, action->dev_id); // irq handling 함수 실행
 		trace_irq_handler_exit(irq, action, res);
 
 		if (WARN_ONCE(!irqs_disabled(),"irq %u handler %pF enabled interrupts\n",
 			      irq, action->handler))
 			local_irq_disable();
 
-		switch (res) {
-		case IRQ_WAKE_THREAD:
+		switch (res) { // handler 함수 실행 결과
+		case IRQ_WAKE_THREAD: // IRQ_WAKE_THREAD를 리턴한 경우
 			/*
 			 * Catch drivers which return WAKE_THREAD but
 			 * did not set up a thread function
 			 */
-			if (unlikely(!action->thread_fn)) {
-				warn_no_thread(irq, action);
+			if (unlikely(!action->thread_fn)) { // thread_fn 할당을 받지 못한 경우
+				warn_no_thread(irq, action); // warning 출력 이후 종료
 				break;
 			}
 
-			__irq_wake_thread(desc, action);
+			__irq_wake_thread(desc, action); // action에서 등록해두었던 interrupt thread wake up
 
 			/* Fall through to add to randomness */
-		case IRQ_HANDLED:
+		case IRQ_HANDLED: // 정상 처리 케이스, flag만 갱신
 			flags |= action->flags;
 			break;
 

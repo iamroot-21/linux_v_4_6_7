@@ -424,19 +424,19 @@ EXPORT_SYMBOL_GPL(irq_set_vcpu_affinity);
 
 void __disable_irq(struct irq_desc *desc)
 {
-	if (!desc->depth++)
-		irq_disable(desc);
+	if (!desc->depth++) // depth가 0일 경우
+		irq_disable(desc); // 비활성화 콜백 함수 실행
 }
 
 static int __disable_irq_nosync(unsigned int irq)
 {
 	unsigned long flags;
-	struct irq_desc *desc = irq_get_desc_buslock(irq, &flags, IRQ_GET_DESC_CHECK_GLOBAL);
+	struct irq_desc *desc = irq_get_desc_buslock(irq, &flags, IRQ_GET_DESC_CHECK_GLOBAL); // irq buslock, desc를 가져옴
 
 	if (!desc)
 		return -EINVAL;
-	__disable_irq(desc);
-	irq_put_desc_busunlock(desc, flags);
+	__disable_irq(desc); // irq_disable 또는 irq_mask 콜백 함수 실행
+	irq_put_desc_busunlock(desc, flags); // irq buslock을 해제
 	return 0;
 }
 
@@ -453,7 +453,7 @@ static int __disable_irq_nosync(unsigned int irq)
  */
 void disable_irq_nosync(unsigned int irq)
 {
-	__disable_irq_nosync(irq);
+	__disable_irq_nosync(irq); // 즉시 비활성화 후 종료
 }
 EXPORT_SYMBOL(disable_irq_nosync);
 
@@ -471,8 +471,8 @@ EXPORT_SYMBOL(disable_irq_nosync);
  */
 void disable_irq(unsigned int irq)
 {
-	if (!__disable_irq_nosync(irq))
-		synchronize_irq(irq);
+	if (!__disable_irq_nosync(irq)) // 인터럽트 비활성화
+		synchronize_irq(irq); // 다른 cpu에서 인터럽트 핸들러가 실행 중일 경우 synchronize 진행
 }
 EXPORT_SYMBOL(disable_irq);
 
@@ -495,8 +495,8 @@ EXPORT_SYMBOL(disable_irq);
  */
 bool disable_hardirq(unsigned int irq)
 {
-	if (!__disable_irq_nosync(irq))
-		return synchronize_hardirq(irq);
+	if (!__disable_irq_nosync(irq)) // 인터럽트 라인 비활성화
+		return synchronize_hardirq(irq); // 비활성화가 정상적으로 수행된 경우 다른 cpu에서 실행되는 인터럽트 핸들러 동작을 대기
 
 	return false;
 }
@@ -505,22 +505,22 @@ EXPORT_SYMBOL_GPL(disable_hardirq);
 void __enable_irq(struct irq_desc *desc)
 {
 	switch (desc->depth) {
-	case 0:
+	case 0: // IRQ가 활성화된 케이스
  err_out:
 		WARN(1, KERN_WARNING "Unbalanced enable for IRQ %d\n",
 		     irq_desc_get_irq(desc));
 		break;
-	case 1: {
+	case 1: { // IRQ가 비활성화된 케이스
 		if (desc->istate & IRQS_SUSPENDED)
 			goto err_out;
 		/* Prevent probing on this irq: */
-		irq_settings_set_noprobe(desc);
-		irq_enable(desc);
+		irq_settings_set_noprobe(desc); // NOPROBE 플래그 설정
+		irq_enable(desc); // 인터럽트 컨트롤러의 활성화 콜백 함수 실행
 		check_irq_resend(desc);
 		/* fall-through */
 	}
 	default:
-		desc->depth--;
+		desc->depth--; // 중첩 카운트 감소
 	}
 }
 
@@ -538,7 +538,7 @@ void __enable_irq(struct irq_desc *desc)
 void enable_irq(unsigned int irq)
 {
 	unsigned long flags;
-	struct irq_desc *desc = irq_get_desc_buslock(irq, &flags, IRQ_GET_DESC_CHECK_GLOBAL);
+	struct irq_desc *desc = irq_get_desc_buslock(irq, &flags, IRQ_GET_DESC_CHECK_GLOBAL); // irq buslock, desc를 가져옴
 
 	if (!desc)
 		return;
@@ -546,9 +546,9 @@ void enable_irq(unsigned int irq)
 		 KERN_ERR "enable_irq before setup/request_irq: irq %u\n", irq))
 		goto out;
 
-	__enable_irq(desc);
+	__enable_irq(desc); // enable 진행
 out:
-	irq_put_desc_busunlock(desc, flags);
+	irq_put_desc_busunlock(desc, flags); // bus unlock
 }
 EXPORT_SYMBOL(enable_irq);
 
@@ -1017,21 +1017,21 @@ static int irq_setup_forced_threading(struct irqaction *new)
 	 * thread handler. We force thread them as well by creating a
 	 * secondary action.
 	 */
-	if (new->handler != irq_default_primary_handler && new->thread_fn) {
+	if (new->handler != irq_default_primary_handler && new->thread_fn) { // default handler가 아니면서 threading 용 함수가 있는 경우
 		/* Allocate the secondary action */
 		new->secondary = kzalloc(sizeof(struct irqaction), GFP_KERNEL);
 		if (!new->secondary)
 			return -ENOMEM;
-		new->secondary->handler = irq_forced_secondary_handler;
+		new->secondary->handler = irq_forced_secondary_handler; // secondary 변수 초기화
 		new->secondary->thread_fn = new->thread_fn;
 		new->secondary->dev_id = new->dev_id;
 		new->secondary->irq = new->irq;
 		new->secondary->name = new->name;
 	}
 	/* Deal with the primary handler */
-	set_bit(IRQTF_FORCED_THREAD, &new->thread_flags);
-	new->thread_fn = new->handler;
-	new->handler = irq_default_primary_handler;
+	set_bit(IRQTF_FORCED_THREAD, &new->thread_flags); // IRQTF_FORCED_THREAD 플래그 설정
+	new->thread_fn = new->handler; // threading용 함수로 기존 handler 함수 포인터 입력
+	new->handler = irq_default_primary_handler; // handler 값을 default handler로 변경
 	return 0;
 }
 
@@ -1060,10 +1060,10 @@ setup_irq_thread(struct irqaction *new, unsigned int irq, bool secondary)
 		.sched_priority = MAX_USER_RT_PRIO/2,
 	};
 
-	if (!secondary) {
+	if (!secondary) { // primary case
 		t = kthread_create(irq_thread, new, "irq/%d-%s", irq,
 				   new->name);
-	} else {
+	} else { // secondary case
 		t = kthread_create(irq_thread, new, "irq/%d-s-%s", irq,
 				   new->name);
 		param.sched_priority -= 1;
@@ -1101,27 +1101,33 @@ setup_irq_thread(struct irqaction *new, unsigned int irq, bool secondary)
 static int
 __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 {
+	/**
+	 * @brief irqaction 등록
+	 * @param[in] irq 할당된 irq line 번호
+	 * @param[in,out] desc irq_desc
+	 * @param[in] new 신규 할당할 irqaction
+	 */
 	struct irqaction *old, **old_ptr;
 	unsigned long flags, thread_mask = 0;
 	int ret, nested, shared = 0;
 	cpumask_var_t mask;
 
-	if (!desc)
+	if (!desc) // desc 가 null 인 경우, 입력할 곳이 없으므로 fail
 		return -EINVAL;
 
-	if (desc->irq_data.chip == &no_irq_chip)
+	if (desc->irq_data.chip == &no_irq_chip) // irq-chip이 dummy chip인 경우
 		return -ENOSYS;
 	if (!try_module_get(desc->owner))
 		return -ENODEV;
 
-	new->irq = irq;
+	new->irq = irq; // irq line 입력
 
 	/*
 	 * Check whether the interrupt nests into another interrupt
 	 * thread.
 	 */
-	nested = irq_settings_is_nested_thread(desc);
-	if (nested) {
+	nested = irq_settings_is_nested_thread(desc); // nested thread인지 확인
+	if (nested) { // nested thread인 경우
 		if (!new->thread_fn) {
 			ret = -EINVAL;
 			goto out_mput;
@@ -1131,10 +1137,10 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		 * the driver for non nested interrupt handling by the
 		 * dummy function which warns when called.
 		 */
-		new->handler = irq_nested_primary_handler;
-	} else {
-		if (irq_settings_can_thread(desc)) {
-			ret = irq_setup_forced_threading(new);
+		new->handler = irq_nested_primary_handler; // irq handler를 nested primary handler로 변경
+	} else { // nested thread가 아닌 경우
+		if (irq_settings_can_thread(desc)) { // threading 가능한 경우
+			ret = irq_setup_forced_threading(new); // secondary 변수 초기화 및 threading 실행이 가능하도록 handler, thread_fn 값 변경
 			if (ret)
 				goto out_mput;
 		}
@@ -1145,7 +1151,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 * and the interrupt does not nest into another interrupt
 	 * thread.
 	 */
-	if (new->thread_fn && !nested) {
+	if (new->thread_fn && !nested) { // nested thread가 아니면서 threading 용 함수가 없는 경우
 		ret = setup_irq_thread(new, irq, false);
 		if (ret)
 			goto out_mput;
@@ -1603,6 +1609,9 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 			 irq_handler_t thread_fn, unsigned long irqflags,
 			 const char *devname, void *dev_id)
 {
+	/**
+	 * @brief 인터럽트 핸들러 등록
+	 */
 	struct irqaction *action;
 	struct irq_desc *desc;
 	int retval;
@@ -1624,35 +1633,35 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	    ((irqflags & IRQF_NO_SUSPEND) && (irqflags & IRQF_COND_SUSPEND)))
 		return -EINVAL;
 
-	desc = irq_to_desc(irq);
+	desc = irq_to_desc(irq); // 인터럽트 디스크립터를 받아옴
 	if (!desc)
-		return -EINVAL;
+		return -EINVAL; // 없는 경우 에러
 
 	if (!irq_settings_can_request(desc) ||
 	    WARN_ON(irq_settings_is_per_cpu_devid(desc)))
 		return -EINVAL;
 
-	if (!handler) {
+	if (!handler) { // IRQ 핸들러가 없는 겨우
 		if (!thread_fn)
 			return -EINVAL;
-		handler = irq_default_primary_handler;
+		handler = irq_default_primary_handler; // default handler로 설정
 	}
 
 	action = kzalloc(sizeof(struct irqaction), GFP_KERNEL);
 	if (!action)
 		return -ENOMEM;
 
-	action->handler = handler;
+	action->handler = handler; // 할당받은 action struct 초기화
 	action->thread_fn = thread_fn;
 	action->flags = irqflags;
 	action->name = devname;
 	action->dev_id = dev_id;
 
-	chip_bus_lock(desc);
-	retval = __setup_irq(irq, desc, action);
-	chip_bus_sync_unlock(desc);
+	chip_bus_lock(desc); // irq bus lock
+	retval = __setup_irq(irq, desc, action); // 수행할 irqaction 구조체를 irq_desc 구조체에 등록
+	chip_bus_sync_unlock(desc); // irq bus unlock
 
-	if (retval) {
+	if (retval) { // setup 실패한 경우, 할당 받았던 물리 메모리 반환
 		kfree(action->secondary);
 		kfree(action);
 	}

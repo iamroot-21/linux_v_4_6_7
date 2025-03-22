@@ -340,6 +340,11 @@ static int notify_starting(unsigned int cpu)
 
 static int bringup_wait_for_ap(unsigned int cpu)
 {
+	/**
+	 * @brief bring up이 끝날 때까지 대기
+	 * @param[in] cpu target cpu
+	 * @return cpu 상태
+	 */
 	struct cpuhp_cpu_state *st = per_cpu_ptr(&cpuhp_state, cpu);
 
 	wait_for_completion(&st->done);
@@ -348,18 +353,23 @@ static int bringup_wait_for_ap(unsigned int cpu)
 
 static int bringup_cpu(unsigned int cpu)
 {
-	struct task_struct *idle = idle_thread_get(cpu);
+	/**
+	 * @brief cpu bringup을 수행
+	 * @param[in] cpu target cpu
+	 * @result bring up 결과 (st->result)
+	 */
+	struct task_struct *idle = idle_thread_get(cpu); // idle thread를 가져옴
 	int ret;
 
 	/* Arch-specific enabling code. */
-	ret = __cpu_up(cpu, idle);
+	ret = __cpu_up(cpu, idle); // TODO 7-26) cpu에 전달할 secondary_data를 채우고 아키텍처 의존적인 부분을 통해 실제 cpu bring up 수행
 	if (ret) {
-		cpu_notify(CPU_UP_CANCELED, cpu);
-		return ret;
+		cpu_notify(CPU_UP_CANCELED, cpu); // __cpu_up이 실패한 경우 성공한 notifier chain 콜백 함수들에게 CPU_UP_CANCELED를 알려 조치를 취할 수 있게 함
+		return ret; // fail 
 	}
-	ret = bringup_wait_for_ap(cpu);
-	BUG_ON(!cpu_online(cpu));
-	return ret;
+	ret = bringup_wait_for_ap(cpu); // cpu bringup이 끝날 때까지 대기
+	BUG_ON(!cpu_online(cpu)); // CPU가 Online 상태가 아닌 경우 에러로 판정
+	return ret; // bring up 결과 리턴
 }
 
 /*
