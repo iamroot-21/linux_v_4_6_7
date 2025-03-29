@@ -229,9 +229,9 @@ static inline void lockdep_softirq_end(bool in_hardirq) { }
 
 asmlinkage __visible void __softirq_entry __do_softirq(void)
 {
-	unsigned long end = jiffies + MAX_SOFTIRQ_TIME;
+	unsigned long end = jiffies + MAX_SOFTIRQ_TIME; // 최대 수행시간
 	unsigned long old_flags = current->flags;
-	int max_restart = MAX_SOFTIRQ_RESTART;
+	int max_restart = MAX_SOFTIRQ_RESTART; // 최대 retry 횟수
 	struct softirq_action *h;
 	bool in_hardirq;
 	__u32 pending;
@@ -244,7 +244,7 @@ asmlinkage __visible void __softirq_entry __do_softirq(void)
 	 */
 	current->flags &= ~PF_MEMALLOC;
 
-	pending = local_softirq_pending();
+	pending = local_softirq_pending(); // sortirq 목록 가져오기
 	account_irq_enter_time(current);
 
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);
@@ -252,13 +252,13 @@ asmlinkage __visible void __softirq_entry __do_softirq(void)
 
 restart:
 	/* Reset the pending bitmask before enabling irqs */
-	set_softirq_pending(0);
+	set_softirq_pending(0); // sortirq 0으로 초기화
 
 	local_irq_enable();
 
 	h = softirq_vec;
 
-	while ((softirq_bit = ffs(pending))) {
+	while ((softirq_bit = ffs(pending))) { // bit set 되어있는것 가져옴
 		unsigned int vec_nr;
 		int prev_count;
 
@@ -270,7 +270,7 @@ restart:
 		kstat_incr_softirqs_this_cpu(vec_nr);
 
 		trace_softirq_entry(vec_nr);
-		h->action(h);
+		h->action(h); // sortirq 실행
 		trace_softirq_exit(vec_nr);
 		if (unlikely(prev_count != preempt_count())) {
 			pr_err("huh, entered softirq %u %s %p with preempt_count %08x, exited with %08x?\n",
@@ -285,7 +285,7 @@ restart:
 	rcu_bh_qs();
 	local_irq_disable();
 
-	pending = local_softirq_pending();
+	pending = local_softirq_pending(); // 위 로직 처리하는 동안 새로운 sortirq 들어왔는지 확인
 	if (pending) {
 		if (time_before(jiffies, end) && !need_resched() &&
 		    --max_restart)
@@ -412,7 +412,7 @@ inline void raise_softirq_irqoff(unsigned int nr)
 	 * schedule the softirq soon.
 	 */
 	if (!in_interrupt())
-		wakeup_softirqd();
+		wakeup_softirqd(); // 인터럽트 실행 될 수 있도록 task 깨우기
 }
 
 void raise_softirq(unsigned int nr)
@@ -427,7 +427,7 @@ void raise_softirq(unsigned int nr)
 void __raise_softirq_irqoff(unsigned int nr)
 {
 	trace_softirq_raise(nr);
-	or_softirq_pending(1UL << nr);
+	or_softirq_pending(1UL << nr); // 발생한 softirq 비트맵 설정
 }
 
 void open_softirq(int nr, void (*action)(struct softirq_action *))

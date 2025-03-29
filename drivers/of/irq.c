@@ -496,7 +496,7 @@ void __init of_irq_init(const struct of_device_id *matches)
 	INIT_LIST_HEAD(&intc_parent_list);
 
 	for_each_matching_node_and_match(np, matches, &match) {
-		if (!of_find_property(np, "interrupt-controller", NULL) ||
+		if (!of_find_property(np, "interrupt-controller", NULL) || // 디바이스 트리에서 인터럽트 컨트롤러 노드만 찾기
 				!of_device_is_available(np))
 			continue;
 
@@ -508,18 +508,18 @@ void __init of_irq_init(const struct of_device_id *matches)
 		 * Here, we allocate and populate an of_intc_desc with the node
 		 * pointer, interrupt-parent device_node etc.
 		 */
-		desc = kzalloc(sizeof(*desc), GFP_KERNEL);
+		desc = kzalloc(sizeof(*desc), GFP_KERNEL); // 인터럽트 컨트롤러 desc 를 표현하기 위한 구조체 할당
 		if (WARN_ON(!desc)) {
 			of_node_put(np);
 			goto err;
 		}
 
 		desc->irq_init_cb = match->data;
-		desc->dev = of_node_get(np);
+		desc->dev = of_node_get(np); // device 에 노드 설정
 		desc->interrupt_parent = of_irq_find_parent(np);
 		if (desc->interrupt_parent == np)
 			desc->interrupt_parent = NULL;
-		list_add_tail(&desc->list, &intc_desc_list);
+		list_add_tail(&desc->list, &intc_desc_list); // 인터럽트 컨트롤러 desc 리스트에 추가
 	}
 
 	/*
@@ -536,6 +536,8 @@ void __init of_irq_init(const struct of_device_id *matches)
 		list_for_each_entry_safe(desc, temp_desc, &intc_desc_list, list) {
 			int ret;
 
+			// root 노드 부터 시작
+			// 이후에는 이전 부모를 갖는 노드
 			if (desc->interrupt_parent != parent)
 				continue;
 
@@ -544,7 +546,7 @@ void __init of_irq_init(const struct of_device_id *matches)
 			pr_debug("of_irq_init: init %s (%p), parent %p\n",
 				 desc->dev->full_name,
 				 desc->dev, desc->interrupt_parent);
-			ret = desc->irq_init_cb(desc->dev,
+			ret = desc->irq_init_cb(desc->dev, // 내 노드와 부모 노드를 가지고 init 함수를 호출
 						desc->interrupt_parent);
 			if (ret) {
 				kfree(desc);
@@ -555,7 +557,7 @@ void __init of_irq_init(const struct of_device_id *matches)
 			 * This one is now set up; add it to the parent list so
 			 * its children can get processed in a subsequent pass.
 			 */
-			list_add_tail(&desc->list, &intc_parent_list);
+			list_add_tail(&desc->list, &intc_parent_list); // 내 노드를 부모로 갖고있는지 다른 노드를 확인하기 위해 parent list 에 추가
 		}
 
 		/* Get the next pending parent that might have children */
@@ -566,7 +568,7 @@ void __init of_irq_init(const struct of_device_id *matches)
 			break;
 		}
 		list_del(&desc->list);
-		parent = desc->dev;
+		parent = desc->dev; // 다음 부모로 지정하고, 남아있는 desc list 를 순회
 		kfree(desc);
 	}
 

@@ -1404,18 +1404,18 @@ static void __queue_work(int cpu, struct workqueue_struct *wq,
 	debug_work_activate(work);
 
 	/* if draining, only works from the same workqueue are allowed */
-	if (unlikely(wq->flags & __WQ_DRAINING) &&
+	if (unlikely(wq->flags & __WQ_DRAINING) && // 실행중인 쓰레드가 내 work 의 쓰레드가 동일할때만 queue 하는 DRAINING flag
 	    WARN_ON_ONCE(!is_chained_work(wq)))
 		return;
 retry:
 	if (req_cpu == WORK_CPU_UNBOUND)
-		cpu = wq_select_unbound_cpu(raw_smp_processor_id());
+		cpu = wq_select_unbound_cpu(raw_smp_processor_id()); // 지정된 cpu 부터 시작하여 round robing 으로 cpu 를 지정
 
 	/* pwq which will be used unless @work is executing elsewhere */
-	if (!(wq->flags & WQ_UNBOUND))
-		pwq = per_cpu_ptr(wq->cpu_pwqs, cpu);
-	else
-		pwq = unbound_pwq_by_node(wq, cpu_to_node(cpu));
+	if (!(wq->flags & WQ_UNBOUND)) // bound 일때
+		pwq = per_cpu_ptr(wq->cpu_pwqs, cpu); // cpu마다 pool_workqueue 구조체를 가짐. cpu 에 맞는 pwq 를 가져옴.
+	else // unbound 
+		pwq = unbound_pwq_by_node(wq, cpu_to_node(cpu)); // cpu 가 속한 node 에서 unbound 용 pwq 를 가져옴
 
 	/*
 	 * If @work was previously on a different pool, it might still be
@@ -1428,17 +1428,17 @@ retry:
 
 		spin_lock(&last_pool->lock);
 
-		worker = find_worker_executing_work(last_pool, work);
+		worker = find_worker_executing_work(last_pool, work); // 풀 안에있는 worker 중 실행가능한? 워커를 가져옴
 
-		if (worker && worker->current_pwq->wq == wq) {
-			pwq = worker->current_pwq;
+		if (worker && worker->current_pwq->wq == wq) { // 워크큐와 같다면
+			pwq = worker->current_pwq; // worker 의 pwq 를 사용
 		} else {
 			/* meh... not running there, queue here */
 			spin_unlock(&last_pool->lock);
-			spin_lock(&pwq->pool->lock);
+			spin_lock(&pwq->pool->lock); // 새로 사용할 pool 에다가 Lock 을 잡음
 		}
-	} else {
-		spin_lock(&pwq->pool->lock);
+	} else { // pwq 와 work 의 pool 이 같은 경우
+		spin_lock(&pwq->pool->lock); // 해당 pool 을 사용
 	}
 
 	/*
@@ -1450,14 +1450,14 @@ retry:
 	 * make forward-progress.
 	 */
 	if (unlikely(!pwq->refcnt)) {
-		if (wq->flags & WQ_UNBOUND) {
+		if (wq->flags & WQ_UNBOUND) { // 버그상황인 경우, unbound 에서는 다른 cpu 를 찾아서 실행하도록 retry
 			spin_unlock(&pwq->pool->lock);
 			cpu_relax();
 			goto retry;
 		}
 		/* oops */
 		WARN_ONCE(true, "workqueue: per-cpu pwq for %s on cpu%d has 0 refcnt",
-			  wq->name, cpu);
+			  wq->name, cpu); // bound 로 cpu 가 지정된 경우는 어쩔수 없으니 경고를 띄움
 	}
 
 	/* pwq determined, queue */
@@ -1468,21 +1468,21 @@ retry:
 		return;
 	}
 
-	pwq->nr_in_flight[pwq->work_color]++;
+	pwq->nr_in_flight[pwq->work_color]++; // 현재 실행중인 color 에 + 1
 	work_flags = work_color_to_flags(pwq->work_color);
 
 	if (likely(pwq->nr_active < pwq->max_active)) {
 		trace_workqueue_activate_work(work);
 		pwq->nr_active++;
-		worklist = &pwq->pool->worklist;
+		worklist = &pwq->pool->worklist; // 실행 가능한 상태인 경우 pool->worklist 로 지정
 		if (list_empty(worklist))
 			pwq->pool->watchdog_ts = jiffies;
 	} else {
 		work_flags |= WORK_STRUCT_DELAYED;
-		worklist = &pwq->delayed_works;
+		worklist = &pwq->delayed_works; // 실행 불가능한 상태인 경우 pwq->delayed_works 로 지정
 	}
 
-	insert_work(pwq, work, worklist, work_flags);
+	insert_work(pwq, work, worklist, work_flags); // work 를 list 에 삽입
 
 	spin_unlock(&pwq->pool->lock);
 }
