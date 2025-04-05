@@ -1778,35 +1778,38 @@ static void worker_detach_from_pool(struct worker *worker,
  */
 static struct worker *create_worker(struct worker_pool *pool)
 {
+	/**
+	 * @brief pool에서 사용할 worker 생성
+	 */
 	struct worker *worker = NULL;
 	int id = -1;
 	char id_buf[16];
 
 	/* ID is needed to determine kthread name */
-	id = ida_simple_get(&pool->worker_ida, 0, 0, GFP_KERNEL);
+	id = ida_simple_get(&pool->worker_ida, 0, 0, GFP_KERNEL); // 새로운 worker id 생성
 	if (id < 0)
 		goto fail;
 
-	worker = alloc_worker(pool->node);
+	worker = alloc_worker(pool->node); // worker 메모리 할당
 	if (!worker)
 		goto fail;
 
-	worker->pool = pool;
-	worker->id = id;
+	worker->pool = pool; // worker pool 등록
+	worker->id = id; // id 입력
 
-	if (pool->cpu >= 0)
+	if (pool->cpu >= 0) // id buf 입력
 		snprintf(id_buf, sizeof(id_buf), "%d:%d%s", pool->cpu, id,
 			 pool->attrs->nice < 0  ? "H" : "");
 	else
 		snprintf(id_buf, sizeof(id_buf), "u%d:%d", pool->id, id);
 
-	worker->task = kthread_create_on_node(worker_thread, worker, pool->node,
+	worker->task = kthread_create_on_node(worker_thread, worker, pool->node, // task 생성
 					      "kworker/%s", id_buf);
 	if (IS_ERR(worker->task))
 		goto fail;
 
-	set_user_nice(worker->task, pool->attrs->nice);
-	kthread_bind_mask(worker->task, pool->attrs->cpumask);
+	set_user_nice(worker->task, pool->attrs->nice); // 생성한 task에 nice 입력
+	kthread_bind_mask(worker->task, pool->attrs->cpumask); // cpumask 입력
 
 	/* successful, attach the worker to the pool */
 	worker_attach_to_pool(worker, pool);
@@ -2197,35 +2200,39 @@ static void process_scheduled_works(struct worker *worker)
  */
 static int worker_thread(void *__worker)
 {
+	/**
+	 * @brief 워커 풀에 등록된 작업을 가져와 처리함
+	 * @param[in] __worker worker
+	 */
 	struct worker *worker = __worker;
 	struct worker_pool *pool = worker->pool;
 
 	/* tell the scheduler that this is a workqueue worker */
-	worker->task->flags |= PF_WQ_WORKER;
+	worker->task->flags |= PF_WQ_WORKER; // 현재 task가 worker 임을 표시
 woke_up:
 	spin_lock_irq(&pool->lock);
 
 	/* am I supposed to die? */
-	if (unlikely(worker->flags & WORKER_DIE)) {
+	if (unlikely(worker->flags & WORKER_DIE)) { // worker thread가 이미 죽은 경우
 		spin_unlock_irq(&pool->lock);
-		WARN_ON_ONCE(!list_empty(&worker->entry));
-		worker->task->flags &= ~PF_WQ_WORKER;
+		WARN_ON_ONCE(!list_empty(&worker->entry)); // list empty 가 아닌 경우 warning message 출력
+		worker->task->flags &= ~PF_WQ_WORKER; // 설정했던 플래그 해제
 
 		set_task_comm(worker->task, "kworker/dying");
 		ida_simple_remove(&pool->worker_ida, worker->id);
-		worker_detach_from_pool(worker, pool);
+		worker_detach_from_pool(worker, pool); // pool에서 제거
 		kfree(worker);
 		return 0;
 	}
 
-	worker_leave_idle(worker);
+	worker_leave_idle(worker); // worker가 idle 상태를 벗어남
 recheck:
 	/* no more worker necessary? */
-	if (!need_more_worker(pool))
+	if (!need_more_worker(pool)) // worker가 없는 경우
 		goto sleep;
 
 	/* do we need to manage? */
-	if (unlikely(!may_start_working(pool)) && manage_workers(worker))
+	if (unlikely(!may_start_working(pool)) && manage_workers(worker)) // pool idle 이 아니고, worker가 manager 인 경우
 		goto recheck;
 
 	/*
@@ -2233,7 +2240,7 @@ recheck:
 	 * preparing to process a work or actually processing it.
 	 * Make sure nobody diddled with it while I was sleeping.
 	 */
-	WARN_ON_ONCE(!list_empty(&worker->scheduled));
+	WARN_ON_ONCE(!list_empty(&worker->scheduled)); // 스케줄링된 작업이 있을 경우 경고 출력
 
 	/*
 	 * Finish PREP stage.  We're guaranteed to have at least one idle
@@ -2242,27 +2249,27 @@ recheck:
 	 * management if applicable and concurrency management is restored
 	 * after being rebound.  See rebind_workers() for details.
 	 */
-	worker_clr_flags(worker, WORKER_PREP | WORKER_REBOUND);
+	worker_clr_flags(worker, WORKER_PREP | WORKER_REBOUND); // prepare 플래그와 rebound 플래그 제거
 
 	do {
 		struct work_struct *work =
 			list_first_entry(&pool->worklist,
-					 struct work_struct, entry);
+					 struct work_struct, entry); // 첫번째 작업을 가져옴
 
-		pool->watchdog_ts = jiffies;
+		pool->watchdog_ts = jiffies; // 타임스탬프 기록
 
-		if (likely(!(*work_data_bits(work) & WORK_STRUCT_LINKED))) {
+		if (likely(!(*work_data_bits(work) & WORK_STRUCT_LINKED))) { // linked 상태가 아닌 경우
 			/* optimization path, not strictly necessary */
-			process_one_work(worker, work);
-			if (unlikely(!list_empty(&worker->scheduled)))
-				process_scheduled_works(worker);
-		} else {
-			move_linked_works(work, &worker->scheduled, NULL);
-			process_scheduled_works(worker);
+			process_one_work(worker, work); // 해당 작업을 수행
+			if (unlikely(!list_empty(&worker->scheduled))) // 스케줄링된 작업이 있을 경우
+				process_scheduled_works(worker);  // 스케줄링된 작업을 수행
+		} else { // 링크된 상태인 경우
+			move_linked_works(work, &worker->scheduled, NULL); // 스케줄링 작업에 등록
+			process_scheduled_works(worker); // 작업 수행
 		}
 	} while (keep_working(pool));
 
-	worker_set_flags(worker, WORKER_PREP);
+	worker_set_flags(worker, WORKER_PREP); // 작업 후 sleep 대기 상태로 설정
 sleep:
 	/*
 	 * pool->lock is held and there's no work to process and no need to
@@ -2271,11 +2278,11 @@ sleep:
 	 * before releasing pool->lock is enough to prevent losing any
 	 * event.
 	 */
-	worker_enter_idle(worker);
+	worker_enter_idle(worker); // worker 를 idle 상태로 변경
 	__set_current_state(TASK_INTERRUPTIBLE);
-	spin_unlock_irq(&pool->lock);
-	schedule();
-	goto woke_up;
+	spin_unlock_irq(&pool->lock); // 선점 해제
+	schedule(); // 스케줄링
+	goto woke_up; // woke up 상태가 될 경우 schedule 함수에서 나와 woke up으로 이동
 }
 
 /**
@@ -3138,19 +3145,23 @@ void free_workqueue_attrs(struct workqueue_attrs *attrs)
  */
 struct workqueue_attrs *alloc_workqueue_attrs(gfp_t gfp_mask)
 {
+	/**
+	 * @brioef workqueue_attrs 할당
+	 * @param[in] gfp_mask attrs 할당 시 사용할 gfp_mask
+	 */
 	struct workqueue_attrs *attrs;
 
-	attrs = kzalloc(sizeof(*attrs), gfp_mask);
+	attrs = kzalloc(sizeof(*attrs), gfp_mask); // attrs 커널 메모리 할당
 	if (!attrs)
 		goto fail;
-	if (!alloc_cpumask_var(&attrs->cpumask, gfp_mask))
+	if (!alloc_cpumask_var(&attrs->cpumask, gfp_mask)) 
 		goto fail;
 
-	cpumask_copy(attrs->cpumask, cpu_possible_mask);
-	return attrs;
+	cpumask_copy(attrs->cpumask, cpu_possible_mask); // attrs->cpumask에 possible mask 값 복사
+	return attrs; // 할당받은 attrs 리턴
 fail:
-	free_workqueue_attrs(attrs);
-	return NULL;
+	free_workqueue_attrs(attrs); // 할당받았던 attrs 해제
+	return NULL; // null 리턴
 }
 
 static void copy_workqueue_attrs(struct workqueue_attrs *to,
@@ -5495,28 +5506,28 @@ static void __init wq_numa_init(void)
 
 static int __init init_workqueues(void)
 {
-	int std_nice[NR_STD_WORKER_POOLS] = { 0, HIGHPRI_NICE_LEVEL };
+	int std_nice[NR_STD_WORKER_POOLS] = { 0, HIGHPRI_NICE_LEVEL }; // 지정할 nice 값을 배열로 선언
 	int i, cpu;
 
 	WARN_ON(__alignof__(struct pool_workqueue) < __alignof__(long long));
 
 	BUG_ON(!alloc_cpumask_var(&wq_unbound_cpumask, GFP_KERNEL));
-	cpumask_copy(wq_unbound_cpumask, cpu_possible_mask);
+	cpumask_copy(wq_unbound_cpumask, cpu_possible_mask); // possible mask를 unbound mask로 복사
 
-	pwq_cache = KMEM_CACHE(pool_workqueue, SLAB_PANIC);
+	pwq_cache = KMEM_CACHE(pool_workqueue, SLAB_PANIC); // pool_workqueue를 위한 슬랩 캐시 생성
 
-	cpu_notifier(workqueue_cpu_up_callback, CPU_PRI_WORKQUEUE_UP);
-	hotcpu_notifier(workqueue_cpu_down_callback, CPU_PRI_WORKQUEUE_DOWN);
+	cpu_notifier(workqueue_cpu_up_callback, CPU_PRI_WORKQUEUE_UP); // cpu up notifier 등록
+	hotcpu_notifier(workqueue_cpu_down_callback, CPU_PRI_WORKQUEUE_DOWN); // cpu down notifier 등록
 
-	wq_numa_init();
+	wq_numa_init(); // workqueue init
 
 	/* initialize CPU pools */
-	for_each_possible_cpu(cpu) {
+	for_each_possible_cpu(cpu) { // possible cpu 별로 looping
 		struct worker_pool *pool;
 
 		i = 0;
-		for_each_cpu_worker_pool(pool, cpu) {
-			BUG_ON(init_worker_pool(pool));
+		for_each_cpu_worker_pool(pool, cpu) { // cpu 의 모든 worker pool 로 looping
+			BUG_ON(init_worker_pool(pool)); // pool init 중 에러 발생 시 bug 처리
 			pool->cpu = cpu;
 			cpumask_copy(pool->attrs->cpumask, cpumask_of(cpu));
 			pool->attrs->nice = std_nice[i++];
@@ -5530,32 +5541,32 @@ static int __init init_workqueues(void)
 	}
 
 	/* create the initial worker */
-	for_each_online_cpu(cpu) {
+	for_each_online_cpu(cpu) { // online cpu 별로 looping
 		struct worker_pool *pool;
 
-		for_each_cpu_worker_pool(pool, cpu) {
-			pool->flags &= ~POOL_DISASSOCIATED;
-			BUG_ON(!create_worker(pool));
+		for_each_cpu_worker_pool(pool, cpu) { // worker pool 별로 looping
+			pool->flags &= ~POOL_DISASSOCIATED; // 
+			BUG_ON(!create_worker(pool)); // worker 생성
 		}
 	}
 
 	/* create default unbound and ordered wq attrs */
-	for (i = 0; i < NR_STD_WORKER_POOLS; i++) {
+	for (i = 0; i < NR_STD_WORKER_POOLS; i++) { // standard worker pool 만큼 순회
 		struct workqueue_attrs *attrs;
 
-		BUG_ON(!(attrs = alloc_workqueue_attrs(GFP_KERNEL)));
-		attrs->nice = std_nice[i];
-		unbound_std_wq_attrs[i] = attrs;
+		BUG_ON(!(attrs = alloc_workqueue_attrs(GFP_KERNEL))); // workqueue_attr 할당 할당
+		attrs->nice = std_nice[i]; // nice 값 복사
+		unbound_std_wq_attrs[i] = attrs; // unbound_std_wq_attr를 입력
 
 		/*
 		 * An ordered wq should have only one pwq as ordering is
 		 * guaranteed by max_active which is enforced by pwqs.
 		 * Turn off NUMA so that dfl_pwq is used for all nodes.
 		 */
-		BUG_ON(!(attrs = alloc_workqueue_attrs(GFP_KERNEL)));
-		attrs->nice = std_nice[i];
-		attrs->no_numa = true;
-		ordered_wq_attrs[i] = attrs;
+		BUG_ON(!(attrs = alloc_workqueue_attrs(GFP_KERNEL))); // attrs를 할당 ㅂ다음
+		attrs->nice = std_nice[i]; // nice 값 복사
+		attrs->no_numa = true; // uma 시스템
+		ordered_wq_attrs[i] = attrs; // ordered_wq_attrs로 입력
 	}
 
 	system_wq = alloc_workqueue("events", 0, 0);
