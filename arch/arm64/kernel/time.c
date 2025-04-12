@@ -69,10 +69,10 @@ void __init time_init(void)
 {
 	u32 arch_timer_rate;
 
-	of_clk_init(NULL);
-	clocksource_probe();
+	of_clk_init(NULL); // 디바이스 트리에서 clock node 가져와서 초기화
+	clocksource_probe(); // clocksource 로 등록된 노드들 초기화
 
-	tick_setup_hrtimer_broadcast();
+	tick_setup_hrtimer_broadcast(); // 공용 hrtimer 초기화 & 이벤트 디바이스 등록
 
 	arch_timer_rate = arch_timer_get_rate();
 	if (!arch_timer_rate)

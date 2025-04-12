@@ -3144,7 +3144,7 @@ void __init of_clk_init(const struct of_device_id *matches)
 	LIST_HEAD(clk_provider_list);
 
 	if (!matches)
-		matches = &__clk_of_table;
+		matches = &__clk_of_table; // CLK_OF_DECLARE 로 정의한 기본 디바이스들
 
 	/* First prepare the list of the clocks providers */
 	for_each_matching_node_and_match(np, matches, &match) {
@@ -3167,14 +3167,14 @@ void __init of_clk_init(const struct of_device_id *matches)
 
 		parent->clk_init_cb = match->data;
 		parent->np = of_node_get(np);
-		list_add_tail(&parent->node, &clk_provider_list);
+		list_add_tail(&parent->node, &clk_provider_list); // clk_provider_list 에 device tree node 등록
 	}
 
-	while (!list_empty(&clk_provider_list)) {
+	while (!list_empty(&clk_provider_list)) { // 리스트를 비울때까지 순회
 		is_init_done = false;
 		list_for_each_entry_safe(clk_provider, next,
 					&clk_provider_list, node) {
-			if (force || parent_ready(clk_provider->np)) {
+			if (force || parent_ready(clk_provider->np)) { // 제일 부모 타이머 노드부터 처리
 
 				clk_provider->clk_init_cb(clk_provider->np);
 				of_clk_set_defaults(clk_provider->np, true);

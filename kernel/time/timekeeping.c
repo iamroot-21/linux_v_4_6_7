@@ -1464,7 +1464,7 @@ void __init timekeeping_init(void)
 	unsigned long flags;
 	struct timespec64 now, boot, tmp;
 
-	read_persistent_clock64(&now);
+	read_persistent_clock64(&now); // 현재시간 불러오기
 	if (!timespec64_valid_strict(&now)) {
 		pr_warn("WARNING: Persistent clock returned invalid value!\n"
 			"         Check your CMOS/BIOS settings.\n");
@@ -1473,7 +1473,7 @@ void __init timekeeping_init(void)
 	} else if (now.tv_sec || now.tv_nsec)
 		persistent_clock_exists = true;
 
-	read_boot_clock64(&boot);
+	read_boot_clock64(&boot); // 부팅된 시점 시간 불러오기
 	if (!timespec64_valid_strict(&boot)) {
 		pr_warn("WARNING: Boot clock returned invalid value!\n"
 			"         Check your CMOS/BIOS settings.\n");
@@ -1485,19 +1485,19 @@ void __init timekeeping_init(void)
 	write_seqcount_begin(&tk_core.seq);
 	ntp_init();
 
-	clock = clocksource_default_clock();
+	clock = clocksource_default_clock(); // jiffies 기반의 clock source 가져오기
 	if (clock->enable)
 		clock->enable(clock);
-	tk_setup_internals(tk, clock);
+	tk_setup_internals(tk, clock); // time keeper 초기화
 
-	tk_set_xtime(tk, &now);
+	tk_set_xtime(tk, &now); // tk 에 현재 시간 설정
 	tk->raw_time.tv_sec = 0;
 	tk->raw_time.tv_nsec = 0;
 	if (boot.tv_sec == 0 && boot.tv_nsec == 0)
 		boot = tk_xtime(tk);
 
 	set_normalized_timespec64(&tmp, -boot.tv_sec, -boot.tv_nsec);
-	tk_set_wall_to_mono(tk, tmp);
+	tk_set_wall_to_mono(tk, tmp); // wall (현재) mono (부팅이후) 로 변환할수 있는 offset 등록
 
 	timekeeping_update(tk, TK_MIRROR | TK_CLOCK_WAS_SET);
 
